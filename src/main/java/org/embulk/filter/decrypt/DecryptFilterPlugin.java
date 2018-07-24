@@ -10,13 +10,21 @@ import org.embulk.config.ConfigException;
 import org.embulk.config.ConfigSource;
 import org.embulk.config.Task;
 import org.embulk.config.TaskSource;
+import org.embulk.spi.Column;
+import org.embulk.spi.ColumnVisitor;
+import org.embulk.spi.DataException;
 import org.embulk.spi.Exec;
 import org.embulk.spi.FilterPlugin;
+import org.embulk.spi.Page;
+import org.embulk.spi.PageBuilder;
 import org.embulk.spi.PageOutput;
+import org.embulk.spi.PageReader;
 import org.embulk.spi.Schema;
 import org.slf4j.Logger;
 
+import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
+import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
@@ -115,9 +123,9 @@ public class DecryptFilterPlugin
             this.encoding = encoding;
         }
 
-        public String encode(byte[] bytes)
+        public byte[] decode(String s)
         {
-            return encoding.encode(bytes);
+            return encoding.decode(s);
         }
 
         @JsonCreator
@@ -178,13 +186,147 @@ public class DecryptFilterPlugin
     }
 
     @Override
-    public PageOutput open(TaskSource taskSource, Schema inputSchema,
-            Schema outputSchema, PageOutput output)
+    public PageOutput open(TaskSource taskSource, final Schema inputSchema,
+           final Schema outputSchema, final PageOutput output)
     {
-        PluginTask task = taskSource.loadTask(PluginTask.class);
+        final PluginTask task = taskSource.loadTask(PluginTask.class);
 
-        // Write your code here :)
-        throw new UnsupportedOperationException("DecryptFilterPlugin.open method is not implemented yet");
+        final Cipher cipher;
+        try {
+            cipher = getCipher(Cipher.DECRYPT_MODE, task);
+        }
+        catch (Exception e) {
+            throw new DataException(e);
+        }
+
+        final int[] targetColumns = new int[task.getColumnNames().size()];
+        int i = 0;
+        for (String name : task.getColumnNames()) {
+            targetColumns[i++] = inputSchema.lookupColumn(name).getIndex();
+        }
+
+        return new PageOutput() {
+            private final PageReader pageReader = new PageReader(inputSchema);
+            private final PageBuilder pageBuilder = new PageBuilder(Exec.getBufferAllocator(), outputSchema, output);
+            private final Encoder encoder = task.getOutputEncoding();
+
+            @Override
+            public void finish()
+            {
+                pageBuilder.finish();
+            }
+
+            @Override
+            public void close()
+            {
+                pageBuilder.close();
+            }
+
+            private boolean isTargetColumn(Column c)
+            {
+                for (int i = 0; i < targetColumns.length; i++) {
+                    if (c.getIndex() == targetColumns[i]) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            @Override
+            public void add(Page page)
+            {
+                pageReader.setPage(page);
+
+                while (pageReader.nextRecord()) {
+                    inputSchema.visitColumns(new ColumnVisitor() {
+                        @Override
+                        public void booleanColumn(Column column)
+                        {
+                            if (pageReader.isNull(column)) {
+                                pageBuilder.setNull(column);
+                            }
+                            else {
+                                pageBuilder.setBoolean(column, pageReader.getBoolean(column));
+                            }
+                        }
+
+                        @Override
+                        public void longColumn(Column column)
+                        {
+                            if (pageReader.isNull(column)) {
+                                pageBuilder.setNull(column);
+                            }
+                            else {
+                                pageBuilder.setLong(column, pageReader.getLong(column));
+                            }
+                        }
+
+                        @Override
+                        public void doubleColumn(Column column)
+                        {
+                            if (pageReader.isNull(column)) {
+                                pageBuilder.setNull(column);
+                            }
+                            else {
+                                pageBuilder.setDouble(column, pageReader.getDouble(column));
+                            }
+                        }
+
+                        @Override
+                        public void stringColumn(Column column)
+                        {
+                            if (pageReader.isNull(column)) {
+                                pageBuilder.setNull(column);
+                            }
+                            else if (isTargetColumn(column)) {
+                                String orig = pageReader.getString(column);
+                                byte[] decoded = encoder.decode(orig);
+                                byte[] decrypted;
+
+                                try {
+                                    decrypted = cipher.doFinal(decoded);
+                                }
+                                catch (BadPaddingException ex) {
+                                    // this must not happen because PKCS5Padding is always enabled
+                                    throw new DataException(ex);
+                                }
+                                catch (IllegalBlockSizeException ex) {
+                                    // this must not happen because always doFinal is called
+                                    throw new DataException(ex);
+                                }
+                                pageBuilder.setString(column, new String(decrypted));
+                            }
+                            else {
+                                pageBuilder.setString(column, pageReader.getString(column));
+                            }
+                        }
+
+                        @Override
+                        public void timestampColumn(Column column)
+                        {
+                            if (pageReader.isNull(column)) {
+                                pageBuilder.setNull(column);
+                            }
+                            else {
+                                pageBuilder.setTimestamp(column, pageReader.getTimestamp(column));
+                            }
+                        }
+
+                        @Override
+                        public void jsonColumn(Column column)
+                        {
+                            if (pageReader.isNull(column)) {
+                                pageBuilder.setNull(column);
+                            }
+                            else {
+                                pageBuilder.setJson(column, pageReader.getJson(column));
+                            }
+                        }
+                    });
+                    pageBuilder.addRecord();
+                }
+            }
+        };
     }
 
     private void validate(PluginTask task, Schema schema) throws ConfigException
