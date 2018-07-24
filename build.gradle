@@ -29,6 +29,11 @@ dependencies {
     testCompile "org.embulk:embulk-standards:0.8.39"
 }
 
+task downloadDependencies(type: Exec) {
+    configurations.testRuntime.files
+    commandLine 'echo', 'Downloaded all dependencies'
+}
+
 task classpath(type: Copy, dependsOn: ["jar"]) {
     doFirst { file("classpath").deleteDir() }
     from (configurations.runtime - configurations.provided + files(jar.archivePath))
