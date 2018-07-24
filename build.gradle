@@ -3,6 +3,7 @@ plugins {
     id "com.github.jruby-gradle.base" version "0.1.5"
     id "java"
     id "checkstyle"
+    id "jacoco"
 }
 import com.github.jrubygradle.JRubyExec
 repositories {
@@ -70,6 +71,15 @@ task "package"(dependsOn: ["gemspec", "classpath"]) {
     }
 }
 
+jacocoTestReport {
+    group = "Reporting"
+    reports {
+        xml.setEnabled(false)
+        csv.setEnabled(false)
+        html.destination file("${buildDir}/reports/coverage")
+    }
+}
+
 task gemspec {
     ext.gemspecFile = file("${project.name}.gemspec")
     inputs.file "build.gradle"
@@ -81,9 +91,9 @@ Gem::Specification.new do |spec|
   spec.authors       = ["Vinh Vo"]
   spec.summary       = %[Decrypt filter plugin for Embulk]
   spec.description   = %[Decrypt]
-  spec.email         = ["vinhvd@gmail.com"]
+  spec.email         = ["vinhvd@treasure-data.com"]
   spec.licenses      = ["MIT"]
-  # TODO set this: spec.homepage      = "https://github.com/vinhvd/embulk-filter-decrypt"
+  # TODO set this: spec.homepage      = "https://github.com/treasure-data/embulk-filter-decrypt"
 
   spec.files         = `git ls-files`.split("\n") + Dir["classpath/*.jar"]
   spec.test_files    = spec.files.grep(%r"^(test|spec)/")

@@ -1,0 +1,36 @@
+lack_of_key_hex:
+  algorithm: AES-256-CBC
+  type: encrypt
+
+lack_of_column_names:
+  algorithm: AES-256-CBC
+  type: encrypt
+  key_hex: XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+
+lack_of_iv_hex:
+  algorithm: AES-256-CBC
+  type: encrypt
+  key_hex: XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+  column_names: [col1, col2]
+
+invalid_key_hex:
+  algorithm: AES-256-CBC
+  type: encrypt
+  key_hex: XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+  iv_hex: XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+  column_names: [col1, col2]
+
+invalid_iv_hex:
+  algorithm: AES-256-CBC
+  type: encrypt
+  key_hex: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+  iv_hex: XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+  column_names: [col1, col2]
+
+invalid_column_names:
+  algorithm: AES-256-CBC
+  type: encrypt
+  key_hex: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+  iv_hex: XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+  iv_hex: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+  column_names: [col1, col2]
