@@ -80,14 +80,17 @@ public class DecryptFilterPlugin
         @JsonCreator
         public static Algorithm fromName(String name)
         {
-            for (Algorithm algo : EnumSet.allOf(Algorithm.class)) {
+            EnumSet<Algorithm> algos = EnumSet.allOf(Algorithm.class);
+            for (Algorithm algo : algos) {
                 for (String n : algo.displayNames) {
                     if (n.equals(name)) {
                         return algo;
                     }
                 }
             }
-            throw new ConfigException("Unsupported algorithm '" + name + "'. Supported algorithms are AES-256-CBC, AES-192-CBC, AES-128-CBC.");
+            throw new ConfigException(format("Unsupported algorithm '%s'. Supported algorithms are %s",
+                    name,
+                    join(algos, ", ")));
         }
 
         @JsonValue

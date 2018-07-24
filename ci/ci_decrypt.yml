@@ -34,3 +34,20 @@ invalid_column_names:
   iv_hex: XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
   iv_hex: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
   column_names: [col1, col2]
+
+unsupported_algorithm:
+  algorithm: ABC
+  type: encrypt
+  key_hex: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+  iv_hex: XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+  iv_hex: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+  column_names: [col1, col2]
+
+unsupported_output_encoding:
+  algorithm: AES-256-CBC
+  type: encrypt
+  key_hex: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+  iv_hex: XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+  iv_hex: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+  column_names: [col1, col2]
+  output_encoding: abc

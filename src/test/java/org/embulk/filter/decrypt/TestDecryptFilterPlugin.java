@@ -146,4 +146,20 @@ public class TestDecryptFilterPlugin
         thrown.expectMessage("Column 'col1' is not found");
         execute("invalid_column_names");
     }
+
+    @Test
+    public void testUnsupportedAlgorithm() throws IOException
+    {
+        thrown.expectCause(hasCause(isA(ConfigException.class)));
+        thrown.expectMessage("Unsupported algorithm 'ABC'. Supported algorithms are AES-256-CBC, AES-192-CBC, AES-128-CBC, AES-256-ECB, AES-192-ECB, AES-128-ECB");
+        execute("unsupported_algorithm");
+    }
+
+    @Test
+    public void testUnsupportedOutputEncoding() throws IOException
+    {
+        thrown.expectCause(hasCause(isA(ConfigException.class)));
+        thrown.expectMessage("Unsupported output encoding 'abc'. Supported encodings are base64, hex");
+        execute("unsupported_output_encoding");
+    }
 }
