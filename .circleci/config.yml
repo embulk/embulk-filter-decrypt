@@ -6,8 +6,8 @@ jobs:
       - image: openjdk:8-jdk
     environment:
       TERM: "dumb"
-      # from https://discuss.circleci.com/t/circle-ci-v2-and-android-memory-issues/11207
-      JVM_OPTS: -Xmx1024m -XX:ParallelGCThreads=2 -XX:ConcGCThreads=2 -XX:ParallelGCThreads=2 -Djava.util.concurrent.ForkJoinPool.common.parallelism=2
+      JVM_OPTS: -Xmx2048m
+      resource_class: large
     steps:
       - checkout
       - restore_cache:
@@ -21,7 +21,7 @@ jobs:
           key: jars-{{ checksum "build.gradle" }}
       - run:
           name: Run Tests
-          command: EMBULK_FILTER_DECRYPT_TEST_CONFIG=`pwd`/ci/ci_decrypt.yml ./gradlew clean check checkstyle jacocoTestReport --no-daemon --max-workers=2
+          command: EMBULK_FILTER_DECRYPT_TEST_CONFIG=`pwd`/ci/ci_decrypt.yml ./gradlew clean check checkstyle jacocoTestReport
       - store_artifacts:
           path: build/reports
           destination: reports
