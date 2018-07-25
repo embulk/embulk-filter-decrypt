@@ -14,8 +14,10 @@ import org.embulk.spi.FilterPlugin;
 import org.embulk.spi.PageOutput;
 import org.embulk.spi.Schema;
 import org.embulk.spi.TestPageBuilderReader;
+import org.embulk.spi.time.Timestamp;
 import org.embulk.spi.type.Types;
 import org.embulk.test.TestingEmbulk;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -23,6 +25,7 @@ import org.junit.rules.ExpectedException;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Date;
 
 import static com.google.common.base.Strings.isNullOrEmpty;
 import static org.embulk.spi.PageTestUtils.buildPage;
@@ -76,6 +79,13 @@ public class TestDecryptFilterPlugin
         output = new TestPageBuilderReader.MockPageOutput();
     }
 
+    @After
+    public void tearDown()
+    {
+        output.finish();
+        output.close();
+    }
+
     /**
      * Load plugin config with Guava & Joda support
      */
@@ -101,9 +111,9 @@ public class TestDecryptFilterPlugin
         plugin.transaction(config(name), inputSchema, new Control());
     }
 
-    private ArrayNode decrypt(String s) throws IOException
+    private ArrayNode decrypt(Object... values) throws IOException
     {
-        resultOutput.add(buildPage(runtime.getBufferAllocator(), inputSchema, s).get(0));
+        resultOutput.add(buildPage(runtime.getBufferAllocator(), inputSchema, values).get(0));
         resultOutput.finish();
         resultOutput.close();
         return MockPageOutputReader.readPageOutput(outputSchema, (TestPageBuilderReader.MockPageOutput) output);
@@ -376,5 +386,81 @@ public class TestDecryptFilterPlugin
         assertNotNull(arrayNode.get(0).get("should_be_decrypted"));
         String expected = "secret";
         assertEquals("Column should be decrypted", expected, arrayNode.get(0).get("should_be_decrypted").asText());
+    }
+
+    @Test
+    public void testOnlyDecryptTargetColumn() throws IOException
+    {
+        inputSchema = Schema.builder()
+                .add("should_be_decrypted", Types.STRING)
+                .add("should_be_not_decrypted", Types.STRING)
+                .build();
+        execute("algorithm_AES-256-CBC_output_encoding_Base64");
+        ArrayNode arrayNode = decrypt("gUzzC+nJSBLbPTAzJlbbMA==", "don't decrypt me");
+        assertEquals(arrayNode.size(), 1);
+        assertNotNull(arrayNode.get(0));
+        assertNotNull(arrayNode.get(0).get("should_be_decrypted"));
+        String expected = "secret";
+        assertEquals("Column should be decrypted", expected, arrayNode.get(0).get("should_be_decrypted").asText());
+
+        assertNotNull(arrayNode.get(0).get("should_be_not_decrypted"));
+        assertEquals("Column should be not decrypted", "don't decrypt me", arrayNode.get(0).get("should_be_not_decrypted").asText());
+    }
+
+    @Test
+    public void testBooleanColumnShouldBeNotDecrypted() throws IOException
+    {
+        inputSchema = Schema.builder()
+                .add("should_be_not_decrypted", Types.BOOLEAN)
+                .build();
+        execute("shoud_be_not_decrypted");
+        ArrayNode arrayNode = decrypt(true);
+        assertEquals(arrayNode.size(), 1);
+        assertNotNull(arrayNode.get(0));
+        assertNotNull(arrayNode.get(0).get("should_be_not_decrypted"));
+        assertEquals("Column should be not decrypted", true, arrayNode.get(0).get("should_be_not_decrypted").asBoolean());
+    }
+
+    @Test
+    public void testLongColumnShouldBeNotDecrypted() throws IOException
+    {
+        inputSchema = Schema.builder()
+                .add("should_be_not_decrypted", Types.LONG)
+                .build();
+        execute("shoud_be_not_decrypted");
+        ArrayNode arrayNode = decrypt(1L);
+        assertEquals(arrayNode.size(), 1);
+        assertNotNull(arrayNode.get(0));
+        assertNotNull(arrayNode.get(0).get("should_be_not_decrypted"));
+        assertEquals("Column should be not decrypted", 1L, arrayNode.get(0).get("should_be_not_decrypted").asLong());
+    }
+
+    @Test
+    public void testDoubleColumnShouldBeNotDecrypted() throws IOException
+    {
+        inputSchema = Schema.builder()
+                .add("should_be_not_decrypted", Types.DOUBLE)
+                .build();
+        execute("shoud_be_not_decrypted");
+        ArrayNode arrayNode = decrypt(1.1d);
+        assertEquals(arrayNode.size(), 1);
+        assertNotNull(arrayNode.get(0));
+        assertNotNull(arrayNode.get(0).get("should_be_not_decrypted"));
+        assertEquals(1.1d, arrayNode.get(0).get("should_be_not_decrypted").asDouble(), 0);
+    }
+
+    @Test
+    public void testTimestampColumnShouldBeNotDecrypted() throws IOException
+    {
+        inputSchema = Schema.builder()
+                .add("should_be_not_decrypted", Types.TIMESTAMP)
+                .build();
+        execute("shoud_be_not_decrypted");
+        Date now = new Date();
+        ArrayNode arrayNode = decrypt(Timestamp.ofEpochMilli(now.getTime()));
+        assertEquals(arrayNode.size(), 1);
+        assertNotNull(arrayNode.get(0));
+        assertNotNull(arrayNode.get(0).get("should_be_not_decrypted"));
+        assertEquals("Column should be not decrypted", String.valueOf(now.getTime()), arrayNode.get(0).get("should_be_not_decrypted").asText());
     }
 }

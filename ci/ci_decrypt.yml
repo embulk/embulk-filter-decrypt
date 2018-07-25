@@ -176,5 +176,12 @@ algorithm_AES-128-ECB_output_encoding_Hex:
   key_hex: 098F6BCD4621D373CADE4E832627B4F60A9172716AE6428409885B8B829CCB05
   column_names: [should_be_decrypted]
 
+shoud_be_not_decrypted:
+  algorithm: AES-256-CBC
+  type: decrypt
+  key_hex: 098F6BCD4621D373CADE4E832627B4F60A9172716AE6428409885B8B829CCB05
+  iv_hex: C9DD4BB33B827EB1FBA1B16A0074D460
+  column_names: [should_be_not_decrypted]
+
 
 
