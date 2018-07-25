@@ -16,7 +16,6 @@ import org.embulk.spi.Schema;
 import org.embulk.spi.TestPageBuilderReader;
 import org.embulk.spi.type.Types;
 import org.embulk.test.TestingEmbulk;
-import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -26,8 +25,11 @@ import java.io.File;
 import java.io.IOException;
 
 import static com.google.common.base.Strings.isNullOrEmpty;
+import static org.embulk.spi.PageTestUtils.buildPage;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.isA;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assume.assumeThat;
 import static org.junit.internal.matchers.ThrowableCauseMatcher.hasCause;
 
@@ -52,13 +54,15 @@ public class TestDecryptFilterPlugin
 
     private PageOutput output;
 
+    private PageOutput resultOutput;
+
     private class Control implements FilterPlugin.Control
     {
         @Override
         public void run(TaskSource taskSource, Schema outputSchema)
         {
             TestDecryptFilterPlugin.this.outputSchema = outputSchema;
-            plugin.open(taskSource, inputSchema, outputSchema, output);
+            TestDecryptFilterPlugin.this.resultOutput = plugin.open(taskSource, inputSchema, outputSchema, output);
         }
     }
 
@@ -92,15 +96,21 @@ public class TestDecryptFilterPlugin
         }
     }
 
-    private void execute(String name) throws IOException
+    private void execute(String name)
     {
         plugin.transaction(config(name), inputSchema, new Control());
-        ArrayNode jsonNodes = MockPageOutputReader.readPageOutput(outputSchema, (TestPageBuilderReader.MockPageOutput) output);
-        Assert.assertNotNull(jsonNodes);
+    }
+
+    private ArrayNode decrypt(String s) throws IOException
+    {
+        resultOutput.add(buildPage(runtime.getBufferAllocator(), inputSchema, s).get(0));
+        resultOutput.finish();
+        resultOutput.close();
+        return MockPageOutputReader.readPageOutput(outputSchema, (TestPageBuilderReader.MockPageOutput) output);
     }
 
     @Test
-    public void testLackOfKeyHex() throws IOException
+    public void testLackOfKeyHex()
     {
         thrown.expectCause(hasCause(isA(ConfigException.class)));
         thrown.expectMessage("Field 'key_hex' is required but not set");
@@ -108,7 +118,7 @@ public class TestDecryptFilterPlugin
     }
 
     @Test
-    public void testLackOfColumnNames() throws IOException
+    public void testLackOfColumnNames()
     {
         thrown.expectCause(hasCause(isA(ConfigException.class)));
         thrown.expectMessage("Field 'column_names' is required but not set");
@@ -116,7 +126,7 @@ public class TestDecryptFilterPlugin
     }
 
     @Test
-    public void testLackOfIvHex() throws IOException
+    public void testLackOfIvHex()
     {
         thrown.expectCause(hasCause(isA(ConfigException.class)));
         thrown.expectMessage("Algorithm 'AES-256-CBC' requires initialization vector. Please generate one and set it to iv_hex option");
@@ -124,7 +134,13 @@ public class TestDecryptFilterPlugin
     }
 
     @Test
-    public void testInvalidKeyHex() throws IOException
+    public void testNonIvAlgorithmShouldBeSilentEvenLackOfIvHex()
+    {
+        execute("algorithm_not_require_iv");
+    }
+
+    @Test
+    public void testInvalidKeyHex()
     {
         thrown.expectCause(hasCause(isA(ConfigException.class)));
         thrown.expectMessage("java.lang.IllegalArgumentException: com.google.common.io.BaseEncoding$DecodingException: Unrecognized character: X");
@@ -132,7 +148,7 @@ public class TestDecryptFilterPlugin
     }
 
     @Test
-    public void testInvalidIvHex() throws IOException
+    public void testInvalidIvHex()
     {
         thrown.expectCause(hasCause(isA(ConfigException.class)));
         thrown.expectMessage("java.lang.IllegalArgumentException: com.google.common.io.BaseEncoding$DecodingException: Unrecognized character: X");
@@ -140,7 +156,7 @@ public class TestDecryptFilterPlugin
     }
 
     @Test
-    public void testColumnNames() throws IOException
+    public void testInvalidColumnNames()
     {
         thrown.expectCause(hasCause(isA(ConfigException.class)));
         thrown.expectMessage("Column 'col1' is not found");
@@ -148,7 +164,7 @@ public class TestDecryptFilterPlugin
     }
 
     @Test
-    public void testUnsupportedAlgorithm() throws IOException
+    public void testUnsupportedAlgorithm()
     {
         thrown.expectCause(hasCause(isA(ConfigException.class)));
         thrown.expectMessage("Unsupported algorithm 'ABC'. Supported algorithms are AES-256-CBC, AES-192-CBC, AES-128-CBC, AES-256-ECB, AES-192-ECB, AES-128-ECB");
@@ -156,10 +172,209 @@ public class TestDecryptFilterPlugin
     }
 
     @Test
-    public void testUnsupportedOutputEncoding() throws IOException
+    public void testUnsupportedOutputEncoding()
     {
         thrown.expectCause(hasCause(isA(ConfigException.class)));
         thrown.expectMessage("Unsupported output encoding 'abc'. Supported encodings are base64, hex");
         execute("unsupported_output_encoding");
+    }
+
+    @Test
+    public void testDefaultOutputEncodingShouldBeBase64()
+    {
+        DecryptFilterPlugin.PluginTask task = config("default_output_encoding").loadConfig(DecryptFilterPlugin.PluginTask.class);
+        assertEquals(task.getOutputEncoding(), DecryptFilterPlugin.Encoder.BASE64);
+    }
+
+    @Test
+    public void testDecryptAES_256_CBCAlgorithmBase64OutputEncoding() throws IOException
+    {
+        execute("algorithm_AES-256-CBC_output_encoding_Base64");
+        ArrayNode arrayNode = decrypt("gUzzC+nJSBLbPTAzJlbbMA==");
+        assertEquals(arrayNode.size(), 1);
+        assertNotNull(arrayNode.get(0));
+        assertNotNull(arrayNode.get(0).get("should_be_decrypted"));
+        String expected = "secret";
+        assertEquals("Column should be decrypted", expected, arrayNode.get(0).get("should_be_decrypted").asText());
+    }
+
+    @Test
+    public void testDecryptAES_256_CBCAlgorithmHexOutputEncoding() throws IOException
+    {
+        execute("algorithm_AES-256-CBC_output_encoding_Hex");
+        ArrayNode arrayNode = decrypt("814CF30BE9C94812DB3D30332656DB30");
+        assertEquals(arrayNode.size(), 1);
+        assertNotNull(arrayNode.get(0));
+        assertNotNull(arrayNode.get(0).get("should_be_decrypted"));
+        String expected = "secret";
+        assertEquals("Column should be decrypted", expected, arrayNode.get(0).get("should_be_decrypted").asText());
+    }
+
+    @Test
+    public void testDecryptAES_256AlgorithmBase64OutputEncoding() throws IOException
+    {
+        execute("algorithm_AES-256_output_encoding_Base64");
+        ArrayNode arrayNode = decrypt("gUzzC+nJSBLbPTAzJlbbMA==");
+        assertEquals(arrayNode.size(), 1);
+        assertNotNull(arrayNode.get(0));
+        assertNotNull(arrayNode.get(0).get("should_be_decrypted"));
+        String expected = "secret";
+        assertEquals("Column should be decrypted", expected, arrayNode.get(0).get("should_be_decrypted").asText());
+    }
+
+    @Test
+    public void testDecryptAES_256AlgorithmHexOutputEncoding() throws IOException
+    {
+        execute("algorithm_AES-256_output_encoding_Hex");
+        ArrayNode arrayNode = decrypt("814CF30BE9C94812DB3D30332656DB30");
+        assertEquals(arrayNode.size(), 1);
+        assertNotNull(arrayNode.get(0));
+        assertNotNull(arrayNode.get(0).get("should_be_decrypted"));
+        String expected = "secret";
+        assertEquals("Column should be decrypted", expected, arrayNode.get(0).get("should_be_decrypted").asText());
+    }
+
+    @Test
+    public void testDecryptAESAlgorithmBase64OutputEncoding() throws IOException
+    {
+        execute("algorithm_AES_output_encoding_Base64");
+        ArrayNode arrayNode = decrypt("gUzzC+nJSBLbPTAzJlbbMA==");
+        assertEquals(arrayNode.size(), 1);
+        assertNotNull(arrayNode.get(0));
+        assertNotNull(arrayNode.get(0).get("should_be_decrypted"));
+        String expected = "secret";
+        assertEquals("Column should be decrypted", expected, arrayNode.get(0).get("should_be_decrypted").asText());
+    }
+
+    @Test
+    public void testDecryptAESAlgorithmHexOutputEncoding() throws IOException
+    {
+        execute("algorithm_AES_output_encoding_Hex");
+        ArrayNode arrayNode = decrypt("814CF30BE9C94812DB3D30332656DB30");
+        assertEquals(arrayNode.size(), 1);
+        assertNotNull(arrayNode.get(0));
+        assertNotNull(arrayNode.get(0).get("should_be_decrypted"));
+        String expected = "secret";
+        assertEquals("Column should be decrypted", expected, arrayNode.get(0).get("should_be_decrypted").asText());
+    }
+
+    @Test
+    public void testDecryptAES_192_CBCAlgorithmBase64OutputEncoding() throws IOException
+    {
+        execute("algorithm_AES-192-CBC_output_encoding_Base64");
+        ArrayNode arrayNode = decrypt("gUzzC+nJSBLbPTAzJlbbMA==");
+        assertEquals(arrayNode.size(), 1);
+        assertNotNull(arrayNode.get(0));
+        assertNotNull(arrayNode.get(0).get("should_be_decrypted"));
+        String expected = "secret";
+        assertEquals("Column should be decrypted", expected, arrayNode.get(0).get("should_be_decrypted").asText());
+    }
+
+    @Test
+    public void testDecryptAES_192_CBCAlgorithmHexOutputEncoding() throws IOException
+    {
+        execute("algorithm_AES-192-CBC_output_encoding_Hex");
+        ArrayNode arrayNode = decrypt("814CF30BE9C94812DB3D30332656DB30");
+        assertEquals(arrayNode.size(), 1);
+        assertNotNull(arrayNode.get(0));
+        assertNotNull(arrayNode.get(0).get("should_be_decrypted"));
+        String expected = "secret";
+        assertEquals("Column should be decrypted", expected, arrayNode.get(0).get("should_be_decrypted").asText());
+    }
+
+    @Test
+    public void testDecryptAES_192AlgorithmBase64OutputEncoding() throws IOException
+    {
+        execute("algorithm_AES-192_output_encoding_Base64");
+        ArrayNode arrayNode = decrypt("gUzzC+nJSBLbPTAzJlbbMA==");
+        assertEquals(arrayNode.size(), 1);
+        assertNotNull(arrayNode.get(0));
+        assertNotNull(arrayNode.get(0).get("should_be_decrypted"));
+        String expected = "secret";
+        assertEquals("Column should be decrypted", expected, arrayNode.get(0).get("should_be_decrypted").asText());
+    }
+
+    @Test
+    public void testDecryptAES_192AlgorithmHexOutputEncoding() throws IOException
+    {
+        execute("algorithm_AES-192_output_encoding_Hex");
+        ArrayNode arrayNode = decrypt("814CF30BE9C94812DB3D30332656DB30");
+        assertEquals(arrayNode.size(), 1);
+        assertNotNull(arrayNode.get(0));
+        assertNotNull(arrayNode.get(0).get("should_be_decrypted"));
+        String expected = "secret";
+        assertEquals("Column should be decrypted", expected, arrayNode.get(0).get("should_be_decrypted").asText());
+    }
+
+    @Test
+    public void testDecryptAES_256_ECBAlgorithmBase64OutputEncoding() throws IOException
+    {
+        execute("algorithm_AES-256-ECB_output_encoding_Base64");
+        ArrayNode arrayNode = decrypt("CO5cH3pGbD4TbUVp9KiOjA==");
+        assertEquals(arrayNode.size(), 1);
+        assertNotNull(arrayNode.get(0));
+        assertNotNull(arrayNode.get(0).get("should_be_decrypted"));
+        String expected = "secret";
+        assertEquals("Column should be decrypted", expected, arrayNode.get(0).get("should_be_decrypted").asText());
+    }
+
+    @Test
+    public void testDecryptAES_256_ECBAlgorithmHexOutputEncoding() throws IOException
+    {
+        execute("algorithm_AES-256-ECB_output_encoding_Hex");
+        ArrayNode arrayNode = decrypt("08EE5C1F7A466C3E136D4569F4A88E8C");
+        assertEquals(arrayNode.size(), 1);
+        assertNotNull(arrayNode.get(0));
+        assertNotNull(arrayNode.get(0).get("should_be_decrypted"));
+        String expected = "secret";
+        assertEquals("Column should be decrypted", expected, arrayNode.get(0).get("should_be_decrypted").asText());
+    }
+
+    @Test
+    public void testDecryptAES_192_ECBAlgorithmBase64OutputEncoding() throws IOException
+    {
+        execute("algorithm_AES-192-ECB_output_encoding_Base64");
+        ArrayNode arrayNode = decrypt("CO5cH3pGbD4TbUVp9KiOjA==");
+        assertEquals(arrayNode.size(), 1);
+        assertNotNull(arrayNode.get(0));
+        assertNotNull(arrayNode.get(0).get("should_be_decrypted"));
+        String expected = "secret";
+        assertEquals("Column should be decrypted", expected, arrayNode.get(0).get("should_be_decrypted").asText());
+    }
+
+    @Test
+    public void testDecryptAES_192_ECBAlgorithmHexOutputEncoding() throws IOException
+    {
+        execute("algorithm_AES-192-ECB_output_encoding_Hex");
+        ArrayNode arrayNode = decrypt("08EE5C1F7A466C3E136D4569F4A88E8C");
+        assertEquals(arrayNode.size(), 1);
+        assertNotNull(arrayNode.get(0));
+        assertNotNull(arrayNode.get(0).get("should_be_decrypted"));
+        String expected = "secret";
+        assertEquals("Column should be decrypted", expected, arrayNode.get(0).get("should_be_decrypted").asText());
+    }
+
+    @Test
+    public void testDecryptAES_128_ECBAlgorithmBase64OutputEncoding() throws IOException
+    {
+        execute("algorithm_AES-128-ECB_output_encoding_Base64");
+        ArrayNode arrayNode = decrypt("CO5cH3pGbD4TbUVp9KiOjA==");
+        assertEquals(arrayNode.size(), 1);
+        assertNotNull(arrayNode.get(0));
+        assertNotNull(arrayNode.get(0).get("should_be_decrypted"));
+        String expected = "secret";
+        assertEquals("Column should be decrypted", expected, arrayNode.get(0).get("should_be_decrypted").asText());
+    }
+
+    @Test
+    public void testDecryptAES_128_ECBAlgorithmHexOutputEncoding() throws IOException
+    {
+        execute("algorithm_AES-128-ECB_output_encoding_Hex");
+        ArrayNode arrayNode = decrypt("08EE5C1F7A466C3E136D4569F4A88E8C");
+        assertEquals(arrayNode.size(), 1);
+        assertNotNull(arrayNode.get(0));
+        assertNotNull(arrayNode.get(0).get("should_be_decrypted"));
+        String expected = "secret";
+        assertEquals("Column should be decrypted", expected, arrayNode.get(0).get("should_be_decrypted").asText());
     }
 }
