@@ -22,11 +22,13 @@ targetCompatibility = 1.7
 dependencies {
     compile  "org.embulk:embulk-core:0.8.39"
     provided "org.embulk:embulk-core:0.8.39"
+    compile "com.amazonaws:aws-java-sdk-s3:1.11.253"
 
     testCompile "junit:junit:4.+"
     testCompile "org.embulk:embulk-core:0.8.39:tests"
     testCompile "org.embulk:embulk-test:0.8.39"
     testCompile "org.embulk:embulk-standards:0.8.39"
+    testCompile "org.mockito:mockito-core:2.+"
 }
 
 task downloadDependencies(type: Exec) {

@@ -1,6 +1,7 @@
 lack_of_key_hex:
   algorithm: AES-256-CBC
   type: decrypt
+  column_names: [col1, col2]
 
 lack_of_column_names:
   algorithm: AES-256-CBC
