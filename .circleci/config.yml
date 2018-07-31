@@ -7,7 +7,7 @@ jobs:
     environment:
       TERM: "dumb"
       JVM_OPTS: -Xmx2048m
-    resource_class: large
+    resource_class: xlarge
     steps:
       - checkout
       - restore_cache:
