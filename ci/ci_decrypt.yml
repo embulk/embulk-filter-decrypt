@@ -184,5 +184,38 @@ shoud_be_not_decrypted:
   iv_hex: C9DD4BB33B827EB1FBA1B16A0074D460
   column_names: [should_be_not_decrypted]
 
+s3_with_algorithm_required_iv:
+  algorithm: AES-256-CBC
+  type: decrypt
+  key_type: s3
+  column_names: [should_be_decrypted]
+  aws_params:
+    region: us-east-2
+    access_key: a_access_key
+    secret_key: a_secret_key
+    bucket: a_bucket
+    full_path: a_full_path
 
+s3_with_algorithm_not_required_iv:
+  algorithm: AES-256-ECB
+  type: decrypt
+  key_type: s3
+  column_names: [should_be_decrypted]
+  aws_params:
+    region: us-east-2
+    access_key: a_access_key
+    secret_key: a_secret_key
+    bucket: a_bucket
+    full_path: a_full_path
 
+s3_with_invalid_region:
+  algorithm: AES-256-ECB
+  type: decrypt
+  key_type: s3
+  column_names: [should_be_decrypted]
+  aws_params:
+    region: invalid_region
+    access_key: a_access_key
+    secret_key: a_secret_key
+    bucket: a_bucket
+    full_path: a_full_path

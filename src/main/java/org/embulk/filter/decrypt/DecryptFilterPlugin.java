@@ -304,8 +304,8 @@ public class DecryptFilterPlugin
             if (e.getErrorType().equals(AmazonServiceException.ErrorType.Client)) {
                 // HTTP 40x errors. auth error, bucket doesn't exist, etc. See AWS document for the full list:
                 // http://docs.aws.amazon.com/AmazonS3/latest/API/ErrorResponses.html
-                if (e.getStatusCode() != 400   // 404 Bad Request is unexpected error
-                        || "ExpiredToken".equalsIgnoreCase(e.getErrorCode())) { // if statusCode == 400 && errorCode == ExpiredToken => throws ConfigException
+                if (e.getStatusCode() != 400
+                        || "ExpiredToken".equalsIgnoreCase(e.getErrorCode())) {
                     throw new ConfigException(e);
                 }
             }
@@ -314,7 +314,7 @@ public class DecryptFilterPlugin
         catch (SdkClientException e) {
             // Amazon S3 couldn't be contacted for a response, or the client
             // couldn't parse the response from Amazon S3.
-           throw new ConfigException(e);
+           throw e;
         }
         finally {
             // To ensure that the network connection doesn't remain open, close any open input streams.
@@ -502,7 +502,7 @@ public class DecryptFilterPlugin
                     throw new ConfigException("Algorithm '" + task.getAlgorithm() + "' requires initialization vector. Please generate one and set it to iv_hex option.");
                 }
                 else if (!task.getAlgorithm().useIv() && task.getIvHex().isPresent()) {
-                    log.warn("Algorithm '" + task.getAlgorithm() + "' doesn't use initialization vector. iv_hex is ignore");
+                    log.warn("Algorithm '" + task.getAlgorithm() + "' doesn't use initialization vector. iv_hex is ignored");
                 }
                 break;
             case S3:
@@ -526,12 +526,17 @@ public class DecryptFilterPlugin
                         throw new ConfigException("Algorithm '" + task.getAlgorithm() + "' requires initialization vector. Please generate one and set it to iv_hex option.");
                     }
                     else if (!task.getAlgorithm().useIv() && !isNullOrEmpty(iv)) {
-                        log.warn("Algorithm '" + task.getAlgorithm() + "' doesn't use initialization vector. iv_hex is ignore");
+                        log.warn("Algorithm '" + task.getAlgorithm() + "' doesn't use initialization vector. iv_hex is ignored");
                     }
                     task.setKeyHex(Optional.of(key));
-                    task.setIvHex(Optional.of(iv));
+                    if (!isNullOrEmpty(iv)) {
+                        task.setIvHex(Optional.of(iv));
+                    }
                 }
                 catch (IOException e) {
+                    throw new ConfigException(e);
+                }
+                catch (Exception e) {
                     throw new ConfigException(e);
                 }
                 break;

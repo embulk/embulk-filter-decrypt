@@ -1,9 +1,15 @@
 package org.embulk.filter.decrypt;
 
+import com.amazonaws.AmazonServiceException;
+import com.amazonaws.SdkClientException;
+import com.amazonaws.services.s3.AmazonS3;
+import com.amazonaws.services.s3.model.GetObjectRequest;
+import com.amazonaws.services.s3.model.Region;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.datatype.guava.GuavaModule;
 import com.fasterxml.jackson.datatype.joda.JodaModule;
+import org.apache.http.HttpStatus;
 import org.embulk.EmbulkTestRuntime;
 import org.embulk.config.ConfigException;
 import org.embulk.config.ConfigLoader;
@@ -16,6 +22,7 @@ import org.embulk.spi.Schema;
 import org.embulk.spi.TestPageBuilderReader;
 import org.embulk.spi.time.Timestamp;
 import org.embulk.spi.type.Types;
+import org.embulk.spi.util.RetryExecutor;
 import org.embulk.test.TestingEmbulk;
 import org.junit.After;
 import org.junit.Before;
@@ -26,6 +33,8 @@ import org.junit.rules.ExpectedException;
 import java.io.File;
 import java.io.IOException;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
 
 import static com.google.common.base.Strings.isNullOrEmpty;
 import static org.embulk.spi.PageTestUtils.buildPage;
@@ -35,6 +44,11 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assume.assumeThat;
 import static org.junit.internal.matchers.ThrowableCauseMatcher.hasCause;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 
 public class TestDecryptFilterPlugin
 {
@@ -59,6 +73,8 @@ public class TestDecryptFilterPlugin
 
     private PageOutput resultOutput;
 
+    private AmazonS3 client;
+
     private class Control implements FilterPlugin.Control
     {
         @Override
@@ -77,6 +93,7 @@ public class TestDecryptFilterPlugin
                 .add("should_be_decrypted", Types.STRING)
                 .build();
         output = new TestPageBuilderReader.MockPageOutput();
+        client = mock(AmazonS3.class);
     }
 
     @After
@@ -462,5 +479,213 @@ public class TestDecryptFilterPlugin
         assertNotNull(arrayNode.get(0));
         assertNotNull(arrayNode.get(0).get("should_be_not_decrypted"));
         assertEquals("Column should be not decrypted", String.valueOf(now.getTime()), arrayNode.get(0).get("should_be_not_decrypted").asText());
+    }
+
+    @Test
+    public void testS3ForAlgorithmRequiredIV() throws IOException
+    {
+        plugin = spy(plugin);
+        Map<String, String> keys = new HashMap<>();
+        keys.put("key_hex", "098F6BCD4621D373CADE4E832627B4F60A9172716AE6428409885B8B829CCB05");
+        keys.put("iv_hex", "C9DD4BB33B827EB1FBA1B16A0074D460");
+        doReturn(keys).when(plugin).retrieveKey(any(String.class), any(String.class), any(AmazonS3.class), any(RetryExecutor.class));
+        execute("s3_with_algorithm_required_iv");
+        ArrayNode arrayNode = decrypt("gUzzC+nJSBLbPTAzJlbbMA==");
+        assertEquals(arrayNode.size(), 1);
+        assertNotNull(arrayNode.get(0));
+        assertNotNull(arrayNode.get(0).get("should_be_decrypted"));
+        String expected = "secret";
+        assertEquals("Column should be decrypted", expected, arrayNode.get(0).get("should_be_decrypted").asText());
+    }
+
+    @Test
+    public void testS3WithoutIVForAlgorithmNotRequiredIV() throws IOException
+    {
+        plugin = spy(plugin);
+        Map<String, String> keys = new HashMap<>();
+        keys.put("key_hex", "098F6BCD4621D373CADE4E832627B4F60A9172716AE6428409885B8B829CCB05");
+        doReturn(keys).when(plugin).retrieveKey(any(String.class), any(String.class), any(AmazonS3.class), any(RetryExecutor.class));
+        execute("s3_with_algorithm_not_required_iv");
+        ArrayNode arrayNode = decrypt("CO5cH3pGbD4TbUVp9KiOjA==");
+        assertEquals(arrayNode.size(), 1);
+        assertNotNull(arrayNode.get(0));
+        assertNotNull(arrayNode.get(0).get("should_be_decrypted"));
+        String expected = "secret";
+        assertEquals("Column should be decrypted", expected, arrayNode.get(0).get("should_be_decrypted").asText());
+    }
+
+    @Test
+    public void testS3WithIVForAlgorithmNotRequiredIV() throws IOException
+    {
+        plugin = spy(plugin);
+        Map<String, String> keys = new HashMap<>();
+        keys.put("key_hex", "098F6BCD4621D373CADE4E832627B4F60A9172716AE6428409885B8B829CCB05");
+        keys.put("iv_hex", "C9DD4BB33B827EB1FBA1B16A0074D460");
+        doReturn(keys).when(plugin).retrieveKey(any(String.class), any(String.class), any(AmazonS3.class), any(RetryExecutor.class));
+        execute("s3_with_algorithm_not_required_iv");
+        ArrayNode arrayNode = decrypt("CO5cH3pGbD4TbUVp9KiOjA==");
+        assertEquals(arrayNode.size(), 1);
+        assertNotNull(arrayNode.get(0));
+        assertNotNull(arrayNode.get(0).get("should_be_decrypted"));
+        String expected = "secret";
+        assertEquals("Column should be decrypted", expected, arrayNode.get(0).get("should_be_decrypted").asText());
+    }
+
+    @Test
+    public void testS3ConfiguredRegion()
+    {
+        ConfigSource configSource = config("s3_with_algorithm_required_iv");
+        AmazonS3 s3Client = plugin.newS3Client(configSource.loadConfig(DecryptFilterPlugin.PluginTask.class).getAWSParams().get());
+
+        // Should reflect the region configuration as is
+        assertEquals(s3Client.getRegion(), Region.US_East_2);
+    }
+
+    @Test
+    public void testS3WithInvalidRegion()
+    {
+        thrown.expectCause(hasCause(isA(ConfigException.class)));
+        execute("s3_with_invalid_region");
+    }
+
+    @Test
+    public void testS3LackOfAWSParams()
+    {
+        thrown.expectCause(hasCause(isA(ConfigException.class)));
+        thrown.expectMessage("AWS Params are required for S3 Key type");
+        ConfigSource configSource = config("s3_with_algorithm_required_iv");
+        configSource.remove("aws_params");
+        plugin.transaction(configSource, inputSchema, new Control());
+    }
+
+    @Test
+    public void testS3LackOfAWSParamsRegion()
+    {
+        thrown.expectCause(hasCause(isA(ConfigException.class)));
+        thrown.expectMessage("Field 'region' is required but not set");
+        ConfigSource configSource = config("s3_with_algorithm_required_iv");
+        configSource.getNested("aws_params").remove("region");
+        plugin.transaction(configSource, inputSchema, new Control());
+    }
+
+    @Test
+    public void testS3LackOfAWSParamsAccessKey()
+    {
+        thrown.expectCause(hasCause(isA(ConfigException.class)));
+        thrown.expectMessage("Field 'access_key' is required but not set");
+        ConfigSource configSource = config("s3_with_algorithm_required_iv");
+        configSource.getNested("aws_params").remove("access_key");
+        plugin.transaction(configSource, inputSchema, new Control());
+    }
+
+    @Test
+    public void testS3LackOfAWSParamsSecretKey()
+    {
+        thrown.expectCause(hasCause(isA(ConfigException.class)));
+        thrown.expectMessage("Field 'secret_key' is required but not set");
+        ConfigSource configSource = config("s3_with_algorithm_required_iv");
+        configSource.getNested("aws_params").remove("secret_key");
+        plugin.transaction(configSource, inputSchema, new Control());
+    }
+
+    @Test
+    public void testS3LackOfAWSParamsBucket()
+    {
+        thrown.expectCause(hasCause(isA(ConfigException.class)));
+        thrown.expectMessage("Field 'bucket' is required but not set");
+        ConfigSource configSource = config("s3_with_algorithm_required_iv");
+        configSource.getNested("aws_params").remove("bucket");
+        plugin.transaction(configSource, inputSchema, new Control());
+    }
+
+    @Test
+    public void testS3LackOfAWSParamsFullPath()
+    {
+        thrown.expectCause(hasCause(isA(ConfigException.class)));
+        thrown.expectMessage("Field 'full_path' is required but not set");
+        ConfigSource configSource = config("s3_with_algorithm_required_iv");
+        configSource.getNested("aws_params").remove("full_path");
+        plugin.transaction(configSource, inputSchema, new Control());
+    }
+
+    private static RetryExecutor retryExecutor()
+    {
+        return RetryExecutor.retryExecutor()
+                .withInitialRetryWait(0)
+                .withMaxRetryWait(0);
+    }
+
+    @Test
+    public void testS3OnRetryGiveUpShouldThrowConfigExceptionForExceptionInForbiddenCode() throws IOException
+    {
+        thrown.expectCause(hasCause(isA(ConfigException.class)));
+        AmazonServiceException exception = new AmazonServiceException("Forbidden exception");
+        exception.setStatusCode(HttpStatus.SC_FORBIDDEN);
+        exception.setErrorType(AmazonServiceException.ErrorType.Client);
+        doThrow(exception).when(client).getObject(any(GetObjectRequest.class));
+        plugin.retrieveKey("a_bucket", "a_path", client, retryExecutor().withRetryLimit(1));
+    }
+
+    @Test
+    public void testS3OnRetryGiveUpShouldThrowConfigExceptionForExceptionInMethodNotAllowCode() throws IOException
+    {
+        thrown.expectCause(hasCause(isA(ConfigException.class)));
+        AmazonServiceException exception = new AmazonServiceException("method not allow exception");
+        exception.setStatusCode(HttpStatus.SC_METHOD_NOT_ALLOWED);
+        exception.setErrorType(AmazonServiceException.ErrorType.Client);
+        doThrow(exception).when(client).getObject(any(GetObjectRequest.class));
+        plugin.retrieveKey("a_bucket", "a_path", client, retryExecutor().withRetryLimit(1));
+    }
+
+    @Test
+    public void testS3OnRetryGiveUpShouldThrowConfigExceptionForExceptionExpiredTokenCode() throws IOException
+    {
+        thrown.expectCause(hasCause(isA(ConfigException.class)));
+        AmazonServiceException exception = new AmazonServiceException("expired token exception");
+        exception.setStatusCode(HttpStatus.SC_BAD_REQUEST);
+        exception.setErrorCode("ExpiredToken");
+        exception.setErrorType(AmazonServiceException.ErrorType.Client);
+        doThrow(exception).when(client).getObject(any(GetObjectRequest.class));
+        plugin.retrieveKey("a_bucket", "a_path", client, retryExecutor().withRetryLimit(1));
+    }
+
+    @Test
+    public void testS3OnRetryGiveUpShouldThrowConfigExceptionForExceptionNoSuchBucketCode() throws IOException
+    {
+        thrown.expectCause(hasCause(isA(ConfigException.class)));
+        AmazonServiceException exception = new AmazonServiceException("no such bucket exception");
+        exception.setErrorCode("NoSuchBucket");
+        exception.setErrorType(AmazonServiceException.ErrorType.Client);
+        doThrow(exception).when(client).getObject(any(GetObjectRequest.class));
+        plugin.retrieveKey("a_bucket", "a_path", client, retryExecutor().withRetryLimit(1));
+    }
+
+    @Test
+    public void testS3OnRetryGiveUpShouldThrowConfigExceptionForExceptionNoSuchKeyCode() throws IOException
+    {
+        thrown.expectCause(hasCause(isA(ConfigException.class)));
+        AmazonServiceException exception = new AmazonServiceException("no such key exception");
+        exception.setErrorCode("NoSuchKey");
+        exception.setErrorType(AmazonServiceException.ErrorType.Client);
+        doThrow(exception).when(client).getObject(any(GetObjectRequest.class));
+        plugin.retrieveKey("a_bucket", "a_path", client, retryExecutor().withRetryLimit(1));
+    }
+
+    @Test
+    public void testS3RetryableExceptionShouldThrowOriginalException() throws IOException
+    {
+        thrown.expectCause(hasCause(isA(AmazonServiceException.class)));
+        AmazonServiceException exception = new AmazonServiceException("retryable exception");
+        doThrow(exception).when(client).getObject(any(GetObjectRequest.class));
+        plugin.retrieveKey("a_bucket", "a_path", client, retryExecutor().withRetryLimit(1));
+    }
+
+    @Test
+    public void testS3SdkClientExceptionShouldThrowOriginalException() throws IOException
+    {
+        thrown.expectCause(hasCause(isA(SdkClientException.class)));
+        SdkClientException exception = new SdkClientException("sdk client exception");
+        doThrow(exception).when(client).getObject(any(GetObjectRequest.class));
+        plugin.retrieveKey("a_bucket", "a_path", client, retryExecutor().withRetryLimit(1));
     }
 }
