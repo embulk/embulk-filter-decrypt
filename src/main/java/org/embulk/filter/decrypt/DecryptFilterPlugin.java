@@ -53,6 +53,7 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 
+import static com.google.common.base.Charsets.UTF_8;
 import static com.google.common.base.Strings.isNullOrEmpty;
 import static java.lang.String.format;
 import static org.apache.commons.lang3.StringUtils.join;
@@ -456,7 +457,7 @@ public class DecryptFilterPlugin
                                     // this must not happen because always doFinal is called
                                     throw new DataException(ex);
                                 }
-                                pageBuilder.setString(column, new String(decrypted));
+                                pageBuilder.setString(column, new String(decrypted, UTF_8));
                             }
                             else {
                                 pageBuilder.setString(column, pageReader.getString(column));
