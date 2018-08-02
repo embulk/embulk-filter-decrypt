@@ -48,132 +48,132 @@ unsupported_algorithm:
   iv_hex: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
   column_names: [col1, col2]
 
-unsupported_output_encoding:
+unsupported_input_encoding:
   algorithm: AES-256-CBC
   type: decrypt
   key_hex: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
   iv_hex: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
   column_names: [col1, col2]
-  output_encoding: abc
+  input_encoding: abc
 
-default_output_encoding:
+default_input_encoding:
   algorithm: AES-256-CBC
   type: decrypt
   key_hex: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
   iv_hex: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
   column_names: [col1, col2]
 
-algorithm_AES-256-CBC_output_encoding_Base64:
+algorithm_AES-256-CBC_input_encoding_Base64:
   algorithm: AES-256-CBC
   type: decrypt
   key_hex: 098F6BCD4621D373CADE4E832627B4F60A9172716AE6428409885B8B829CCB05
   iv_hex: C9DD4BB33B827EB1FBA1B16A0074D460
   column_names: [should_be_decrypted]
 
-algorithm_AES-256-CBC_output_encoding_Hex:
+algorithm_AES-256-CBC_input_encoding_Hex:
   algorithm: AES-256-CBC
   type: decrypt
-  output_encoding: hex
+  input_encoding: hex
   key_hex: 098F6BCD4621D373CADE4E832627B4F60A9172716AE6428409885B8B829CCB05
   iv_hex: C9DD4BB33B827EB1FBA1B16A0074D460
   column_names: [should_be_decrypted]
 
-algorithm_AES-256_output_encoding_Base64:
+algorithm_AES-256_input_encoding_Base64:
   algorithm: AES-256
   type: decrypt
   key_hex: 098F6BCD4621D373CADE4E832627B4F60A9172716AE6428409885B8B829CCB05
   iv_hex: C9DD4BB33B827EB1FBA1B16A0074D460
   column_names: [should_be_decrypted]
 
-algorithm_AES-256_output_encoding_Hex:
+algorithm_AES-256_input_encoding_Hex:
   algorithm: AES-256
   type: decrypt
-  output_encoding: hex
+  input_encoding: hex
   key_hex: 098F6BCD4621D373CADE4E832627B4F60A9172716AE6428409885B8B829CCB05
   iv_hex: C9DD4BB33B827EB1FBA1B16A0074D460
   column_names: [should_be_decrypted]
 
-algorithm_AES_output_encoding_Base64:
+algorithm_AES_input_encoding_Base64:
   algorithm: AES
   type: decrypt
   key_hex: 098F6BCD4621D373CADE4E832627B4F60A9172716AE6428409885B8B829CCB05
   iv_hex: C9DD4BB33B827EB1FBA1B16A0074D460
   column_names: [should_be_decrypted]
 
-algorithm_AES_output_encoding_Hex:
+algorithm_AES_input_encoding_Hex:
   algorithm: AES
   type: decrypt
-  output_encoding: hex
+  input_encoding: hex
   key_hex: 098F6BCD4621D373CADE4E832627B4F60A9172716AE6428409885B8B829CCB05
   iv_hex: C9DD4BB33B827EB1FBA1B16A0074D460
   column_names: [should_be_decrypted]
 
-algorithm_AES-192-CBC_output_encoding_Base64:
+algorithm_AES-192-CBC_input_encoding_Base64:
   algorithm: AES-192-CBC
   type: decrypt
   key_hex: 098F6BCD4621D373CADE4E832627B4F60A9172716AE6428409885B8B829CCB05
   iv_hex: C9DD4BB33B827EB1FBA1B16A0074D460
   column_names: [should_be_decrypted]
 
-algorithm_AES-192-CBC_output_encoding_Hex:
+algorithm_AES-192-CBC_input_encoding_Hex:
   algorithm: AES-192-CBC
   type: decrypt
-  output_encoding: hex
+  input_encoding: hex
   key_hex: 098F6BCD4621D373CADE4E832627B4F60A9172716AE6428409885B8B829CCB05
   iv_hex: C9DD4BB33B827EB1FBA1B16A0074D460
   column_names: [should_be_decrypted]
 
-algorithm_AES-192_output_encoding_Base64:
+algorithm_AES-192_input_encoding_Base64:
   algorithm: AES-192
   type: decrypt
   key_hex: 098F6BCD4621D373CADE4E832627B4F60A9172716AE6428409885B8B829CCB05
   iv_hex: C9DD4BB33B827EB1FBA1B16A0074D460
   column_names: [should_be_decrypted]
 
-algorithm_AES-192_output_encoding_Hex:
+algorithm_AES-192_input_encoding_Hex:
   algorithm: AES-192
   type: decrypt
-  output_encoding: hex
+  input_encoding: hex
   key_hex: 098F6BCD4621D373CADE4E832627B4F60A9172716AE6428409885B8B829CCB05
   iv_hex: C9DD4BB33B827EB1FBA1B16A0074D460
   column_names: [should_be_decrypted]
 
-algorithm_AES-256-ECB_output_encoding_Base64:
+algorithm_AES-256-ECB_input_encoding_Base64:
   algorithm: AES-256-ECB
   type: decrypt
   key_hex: 098F6BCD4621D373CADE4E832627B4F60A9172716AE6428409885B8B829CCB05
   column_names: [should_be_decrypted]
 
-algorithm_AES-256-ECB_output_encoding_Hex:
+algorithm_AES-256-ECB_input_encoding_Hex:
   algorithm: AES-256-ECB
   type: decrypt
-  output_encoding: hex
+  input_encoding: hex
   key_hex: 098F6BCD4621D373CADE4E832627B4F60A9172716AE6428409885B8B829CCB05
   column_names: [should_be_decrypted]
 
-algorithm_AES-192-ECB_output_encoding_Base64:
+algorithm_AES-192-ECB_input_encoding_Base64:
   algorithm: AES-192-ECB
   type: decrypt
   key_hex: 098F6BCD4621D373CADE4E832627B4F60A9172716AE6428409885B8B829CCB05
   column_names: [should_be_decrypted]
 
-algorithm_AES-192-ECB_output_encoding_Hex:
+algorithm_AES-192-ECB_input_encoding_Hex:
   algorithm: AES-192-ECB
   type: decrypt
-  output_encoding: hex
+  input_encoding: hex
   key_hex: 098F6BCD4621D373CADE4E832627B4F60A9172716AE6428409885B8B829CCB05
   column_names: [should_be_decrypted]
 
-algorithm_AES-128-ECB_output_encoding_Base64:
+algorithm_AES-128-ECB_input_encoding_Base64:
   algorithm: AES-128-ECB
   type: decrypt
   key_hex: 098F6BCD4621D373CADE4E832627B4F60A9172716AE6428409885B8B829CCB05
   column_names: [should_be_decrypted]
 
-algorithm_AES-128-ECB_output_encoding_Hex:
+algorithm_AES-128-ECB_input_encoding_Hex:
   algorithm: AES-128-ECB
   type: decrypt
-  output_encoding: hex
+  input_encoding: hex
   key_hex: 098F6BCD4621D373CADE4E832627B4F60A9172716AE6428409885B8B829CCB05
   column_names: [should_be_decrypted]
 
@@ -194,7 +194,7 @@ s3_with_algorithm_required_iv:
     access_key: a_access_key
     secret_key: a_secret_key
     bucket: a_bucket
-    full_path: a_full_path
+    path: a_path
 
 s3_with_algorithm_not_required_iv:
   algorithm: AES-256-ECB
@@ -206,7 +206,7 @@ s3_with_algorithm_not_required_iv:
     access_key: a_access_key
     secret_key: a_secret_key
     bucket: a_bucket
-    full_path: a_full_path
+    path: a_path
 
 s3_with_invalid_region:
   algorithm: AES-256-ECB
@@ -218,4 +218,4 @@ s3_with_invalid_region:
     access_key: a_access_key
     secret_key: a_secret_key
     bucket: a_bucket
-    full_path: a_full_path
+    path: a_path

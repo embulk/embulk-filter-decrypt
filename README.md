@@ -32,16 +32,16 @@ id,password,comment
 
 - **algorithm**: encryption algorithm (see below) (enum, required)
 - **column_names**: names of string columns to encrypt (array of string, required)
-- **key_type**: encryption key (string, optional, default: inline), can be either "inline" or "s3"
+- **key_type**: encryption key (enum, optional, default: inline), can be either "inline" or "s3"
 - **key_hex**: encryption key (string, required if key_type is inline)
 - **iv_hex**: encryption initialization vector (string, required if mode of the algorithm is CBC and key_type is inline)
-- **output_encoding**: the encoding of encrypted value, can be either "base64" or "hex" (base16)
+- **input_encoding**: the encoding of encrypted value, can be either "base64" or "hex" (base16)
 - **aws_params**: AWS/S3 parameters (hash, required if key_type is s3)
     - **region**: a valid AWS region
     - **access_key**: a valid AWS access key
     - **secret_key**: a valid AWS secret key
     - **bucket**: a valid S3 bucket
-    - **full_path**: a valid S3 key (S3 file full path)
+    - **path**: a valid S3 key (S3 file path)
     
 S3 key file should be in valid YAML format: (iv_hex is required if mode of the algorithm is CBC)
 
@@ -72,7 +72,7 @@ Available algorithms are:
      column_names: [password, ip]
      key_hex: 098F6BCD4621D373CADE4E832627B4F60A9172716AE6428409885B8B829CCB05
      iv_hex: C9DD4BB33B827EB1FBA1B16A0074D460
-     output_encoding: hex
+     input_encoding: hex
  ```
 * S3 key type
 
@@ -80,7 +80,7 @@ Available algorithms are:
  filters:
    - type: decrypt
      algorithm: AES-256-CBC
-     output_encoding: hex
+     input_encoding: hex
      column_names: [password, ip]
      key_type: s3
      aws_params:
@@ -88,7 +88,7 @@ Available algorithms are:
        access_key: XXXXXXXXXXXXXXXXXXXX
        secret_key: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
        bucket: com.sample.keys
-       full_path: key.aes
+       path: key.aes
 ```
 
 ## Build

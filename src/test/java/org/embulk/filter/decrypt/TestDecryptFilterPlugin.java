@@ -1,15 +1,11 @@
 package org.embulk.filter.decrypt;
 
-import com.amazonaws.AmazonServiceException;
-import com.amazonaws.SdkClientException;
 import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.model.GetObjectRequest;
 import com.amazonaws.services.s3.model.Region;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.datatype.guava.GuavaModule;
 import com.fasterxml.jackson.datatype.joda.JodaModule;
-import org.apache.http.HttpStatus;
 import org.embulk.EmbulkTestRuntime;
 import org.embulk.config.ConfigException;
 import org.embulk.config.ConfigLoader;
@@ -22,10 +18,10 @@ import org.embulk.spi.Schema;
 import org.embulk.spi.TestPageBuilderReader;
 import org.embulk.spi.time.Timestamp;
 import org.embulk.spi.type.Types;
-import org.embulk.spi.util.RetryExecutor;
 import org.embulk.test.TestingEmbulk;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
@@ -46,12 +42,12 @@ import static org.junit.Assume.assumeThat;
 import static org.junit.internal.matchers.ThrowableCauseMatcher.hasCause;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 
 public class TestDecryptFilterPlugin
 {
+    private static String testConfigPath;
+
     @Rule
     public EmbulkTestRuntime runtime = new EmbulkTestRuntime();
 
@@ -73,8 +69,6 @@ public class TestDecryptFilterPlugin
 
     private PageOutput resultOutput;
 
-    private AmazonS3 client;
-
     private class Control implements FilterPlugin.Control
     {
         @Override
@@ -85,6 +79,13 @@ public class TestDecryptFilterPlugin
         }
     }
 
+    @BeforeClass
+    public static void setupClass()
+    {
+        testConfigPath = System.getenv("EMBULK_FILTER_DECRYPT_TEST_CONFIG");
+        assumeThat(isNullOrEmpty(testConfigPath), is(false));
+    }
+
     @Before
     public void setup()
     {
@@ -93,7 +94,6 @@ public class TestDecryptFilterPlugin
                 .add("should_be_decrypted", Types.STRING)
                 .build();
         output = new TestPageBuilderReader.MockPageOutput();
-        client = mock(AmazonS3.class);
     }
 
     @After
@@ -108,15 +108,12 @@ public class TestDecryptFilterPlugin
      */
     ConfigSource config(String name)
     {
-        String path = System.getenv("EMBULK_FILTER_DECRYPT_TEST_CONFIG");
-        assumeThat(isNullOrEmpty(path), is(false));
-
         try {
             ObjectMapper mapper = new ObjectMapper()
                     .registerModule(new GuavaModule())
                     .registerModule(new JodaModule());
             ConfigLoader configLoader = new ConfigLoader(new ModelManager(null, mapper));
-            return configLoader.fromYamlFile(new File(path)).getNested(name);
+            return configLoader.fromYamlFile(new File(testConfigPath)).getNested(name);
         }
         catch (IOException e) {
             throw new RuntimeException();
@@ -199,24 +196,24 @@ public class TestDecryptFilterPlugin
     }
 
     @Test
-    public void testUnsupportedOutputEncoding()
+    public void testUnsupportedInputEncoding()
     {
         thrown.expectCause(hasCause(isA(ConfigException.class)));
-        thrown.expectMessage("Unsupported output encoding 'abc'. Supported encodings are base64, hex");
-        execute("unsupported_output_encoding");
+        thrown.expectMessage("Unsupported input encoding 'abc'. Supported encodings are base64, hex");
+        execute("unsupported_input_encoding");
     }
 
     @Test
-    public void testDefaultOutputEncodingShouldBeBase64()
+    public void testDefaultInputEncodingShouldBeBase64()
     {
-        DecryptFilterPlugin.PluginTask task = config("default_output_encoding").loadConfig(DecryptFilterPlugin.PluginTask.class);
-        assertEquals(task.getOutputEncoding(), DecryptFilterPlugin.Encoder.BASE64);
+        DecryptFilterPlugin.PluginTask task = config("default_input_encoding").loadConfig(DecryptFilterPlugin.PluginTask.class);
+        assertEquals(task.getInputEncoding(), DecryptFilterPlugin.Encoder.BASE64);
     }
 
     @Test
-    public void testDecryptAES_256_CBCAlgorithmBase64OutputEncoding() throws IOException
+    public void testDecryptAES_256_CBCAlgorithmBase64InputEncoding() throws IOException
     {
-        execute("algorithm_AES-256-CBC_output_encoding_Base64");
+        execute("algorithm_AES-256-CBC_input_encoding_Base64");
         ArrayNode arrayNode = decrypt("gUzzC+nJSBLbPTAzJlbbMA==");
         assertEquals(arrayNode.size(), 1);
         assertNotNull(arrayNode.get(0));
@@ -226,9 +223,9 @@ public class TestDecryptFilterPlugin
     }
 
     @Test
-    public void testDecryptAES_256_CBCAlgorithmHexOutputEncoding() throws IOException
+    public void testDecryptAES_256_CBCAlgorithmHexInputEncoding() throws IOException
     {
-        execute("algorithm_AES-256-CBC_output_encoding_Hex");
+        execute("algorithm_AES-256-CBC_input_encoding_Hex");
         ArrayNode arrayNode = decrypt("814CF30BE9C94812DB3D30332656DB30");
         assertEquals(arrayNode.size(), 1);
         assertNotNull(arrayNode.get(0));
@@ -238,9 +235,9 @@ public class TestDecryptFilterPlugin
     }
 
     @Test
-    public void testDecryptAES_256AlgorithmBase64OutputEncoding() throws IOException
+    public void testDecryptAES_256AlgorithmBase64InputEncoding() throws IOException
     {
-        execute("algorithm_AES-256_output_encoding_Base64");
+        execute("algorithm_AES-256_input_encoding_Base64");
         ArrayNode arrayNode = decrypt("gUzzC+nJSBLbPTAzJlbbMA==");
         assertEquals(arrayNode.size(), 1);
         assertNotNull(arrayNode.get(0));
@@ -250,9 +247,9 @@ public class TestDecryptFilterPlugin
     }
 
     @Test
-    public void testDecryptAES_256AlgorithmHexOutputEncoding() throws IOException
+    public void testDecryptAES_256AlgorithmHexInputEncoding() throws IOException
     {
-        execute("algorithm_AES-256_output_encoding_Hex");
+        execute("algorithm_AES-256_input_encoding_Hex");
         ArrayNode arrayNode = decrypt("814CF30BE9C94812DB3D30332656DB30");
         assertEquals(arrayNode.size(), 1);
         assertNotNull(arrayNode.get(0));
@@ -262,9 +259,9 @@ public class TestDecryptFilterPlugin
     }
 
     @Test
-    public void testDecryptAESAlgorithmBase64OutputEncoding() throws IOException
+    public void testDecryptAESAlgorithmBase64InputEncoding() throws IOException
     {
-        execute("algorithm_AES_output_encoding_Base64");
+        execute("algorithm_AES_input_encoding_Base64");
         ArrayNode arrayNode = decrypt("gUzzC+nJSBLbPTAzJlbbMA==");
         assertEquals(arrayNode.size(), 1);
         assertNotNull(arrayNode.get(0));
@@ -274,9 +271,9 @@ public class TestDecryptFilterPlugin
     }
 
     @Test
-    public void testDecryptAESAlgorithmHexOutputEncoding() throws IOException
+    public void testDecryptAESAlgorithmHexInputEncoding() throws IOException
     {
-        execute("algorithm_AES_output_encoding_Hex");
+        execute("algorithm_AES_input_encoding_Hex");
         ArrayNode arrayNode = decrypt("814CF30BE9C94812DB3D30332656DB30");
         assertEquals(arrayNode.size(), 1);
         assertNotNull(arrayNode.get(0));
@@ -286,9 +283,9 @@ public class TestDecryptFilterPlugin
     }
 
     @Test
-    public void testDecryptAES_192_CBCAlgorithmBase64OutputEncoding() throws IOException
+    public void testDecryptAES_192_CBCAlgorithmBase64InputEncoding() throws IOException
     {
-        execute("algorithm_AES-192-CBC_output_encoding_Base64");
+        execute("algorithm_AES-192-CBC_input_encoding_Base64");
         ArrayNode arrayNode = decrypt("gUzzC+nJSBLbPTAzJlbbMA==");
         assertEquals(arrayNode.size(), 1);
         assertNotNull(arrayNode.get(0));
@@ -298,9 +295,9 @@ public class TestDecryptFilterPlugin
     }
 
     @Test
-    public void testDecryptAES_192_CBCAlgorithmHexOutputEncoding() throws IOException
+    public void testDecryptAES_192_CBCAlgorithmHexInputEncoding() throws IOException
     {
-        execute("algorithm_AES-192-CBC_output_encoding_Hex");
+        execute("algorithm_AES-192-CBC_input_encoding_Hex");
         ArrayNode arrayNode = decrypt("814CF30BE9C94812DB3D30332656DB30");
         assertEquals(arrayNode.size(), 1);
         assertNotNull(arrayNode.get(0));
@@ -310,9 +307,9 @@ public class TestDecryptFilterPlugin
     }
 
     @Test
-    public void testDecryptAES_192AlgorithmBase64OutputEncoding() throws IOException
+    public void testDecryptAES_192AlgorithmBase64InputEncoding() throws IOException
     {
-        execute("algorithm_AES-192_output_encoding_Base64");
+        execute("algorithm_AES-192_input_encoding_Base64");
         ArrayNode arrayNode = decrypt("gUzzC+nJSBLbPTAzJlbbMA==");
         assertEquals(arrayNode.size(), 1);
         assertNotNull(arrayNode.get(0));
@@ -322,9 +319,9 @@ public class TestDecryptFilterPlugin
     }
 
     @Test
-    public void testDecryptAES_192AlgorithmHexOutputEncoding() throws IOException
+    public void testDecryptAES_192AlgorithmHexInputEncoding() throws IOException
     {
-        execute("algorithm_AES-192_output_encoding_Hex");
+        execute("algorithm_AES-192_input_encoding_Hex");
         ArrayNode arrayNode = decrypt("814CF30BE9C94812DB3D30332656DB30");
         assertEquals(arrayNode.size(), 1);
         assertNotNull(arrayNode.get(0));
@@ -334,9 +331,9 @@ public class TestDecryptFilterPlugin
     }
 
     @Test
-    public void testDecryptAES_256_ECBAlgorithmBase64OutputEncoding() throws IOException
+    public void testDecryptAES_256_ECBAlgorithmBase64InputEncoding() throws IOException
     {
-        execute("algorithm_AES-256-ECB_output_encoding_Base64");
+        execute("algorithm_AES-256-ECB_input_encoding_Base64");
         ArrayNode arrayNode = decrypt("CO5cH3pGbD4TbUVp9KiOjA==");
         assertEquals(arrayNode.size(), 1);
         assertNotNull(arrayNode.get(0));
@@ -346,9 +343,9 @@ public class TestDecryptFilterPlugin
     }
 
     @Test
-    public void testDecryptAES_256_ECBAlgorithmHexOutputEncoding() throws IOException
+    public void testDecryptAES_256_ECBAlgorithmHexInputEncoding() throws IOException
     {
-        execute("algorithm_AES-256-ECB_output_encoding_Hex");
+        execute("algorithm_AES-256-ECB_input_encoding_Hex");
         ArrayNode arrayNode = decrypt("08EE5C1F7A466C3E136D4569F4A88E8C");
         assertEquals(arrayNode.size(), 1);
         assertNotNull(arrayNode.get(0));
@@ -358,9 +355,9 @@ public class TestDecryptFilterPlugin
     }
 
     @Test
-    public void testDecryptAES_192_ECBAlgorithmBase64OutputEncoding() throws IOException
+    public void testDecryptAES_192_ECBAlgorithmBase64InputEncoding() throws IOException
     {
-        execute("algorithm_AES-192-ECB_output_encoding_Base64");
+        execute("algorithm_AES-192-ECB_input_encoding_Base64");
         ArrayNode arrayNode = decrypt("CO5cH3pGbD4TbUVp9KiOjA==");
         assertEquals(arrayNode.size(), 1);
         assertNotNull(arrayNode.get(0));
@@ -370,9 +367,9 @@ public class TestDecryptFilterPlugin
     }
 
     @Test
-    public void testDecryptAES_192_ECBAlgorithmHexOutputEncoding() throws IOException
+    public void testDecryptAES_192_ECBAlgorithmHexInputEncoding() throws IOException
     {
-        execute("algorithm_AES-192-ECB_output_encoding_Hex");
+        execute("algorithm_AES-192-ECB_input_encoding_Hex");
         ArrayNode arrayNode = decrypt("08EE5C1F7A466C3E136D4569F4A88E8C");
         assertEquals(arrayNode.size(), 1);
         assertNotNull(arrayNode.get(0));
@@ -382,9 +379,9 @@ public class TestDecryptFilterPlugin
     }
 
     @Test
-    public void testDecryptAES_128_ECBAlgorithmBase64OutputEncoding() throws IOException
+    public void testDecryptAES_128_ECBAlgorithmBase64InputEncoding() throws IOException
     {
-        execute("algorithm_AES-128-ECB_output_encoding_Base64");
+        execute("algorithm_AES-128-ECB_input_encoding_Base64");
         ArrayNode arrayNode = decrypt("CO5cH3pGbD4TbUVp9KiOjA==");
         assertEquals(arrayNode.size(), 1);
         assertNotNull(arrayNode.get(0));
@@ -394,9 +391,9 @@ public class TestDecryptFilterPlugin
     }
 
     @Test
-    public void testDecryptAES_128_ECBAlgorithmHexOutputEncoding() throws IOException
+    public void testDecryptAES_128_ECBAlgorithmHexInputEncoding() throws IOException
     {
-        execute("algorithm_AES-128-ECB_output_encoding_Hex");
+        execute("algorithm_AES-128-ECB_input_encoding_Hex");
         ArrayNode arrayNode = decrypt("08EE5C1F7A466C3E136D4569F4A88E8C");
         assertEquals(arrayNode.size(), 1);
         assertNotNull(arrayNode.get(0));
@@ -412,7 +409,7 @@ public class TestDecryptFilterPlugin
                 .add("should_be_decrypted", Types.STRING)
                 .add("should_be_not_decrypted", Types.STRING)
                 .build();
-        execute("algorithm_AES-256-CBC_output_encoding_Base64");
+        execute("algorithm_AES-256-CBC_input_encoding_Base64");
         ArrayNode arrayNode = decrypt("gUzzC+nJSBLbPTAzJlbbMA==", "don't decrypt me");
         assertEquals(arrayNode.size(), 1);
         assertNotNull(arrayNode.get(0));
@@ -488,7 +485,7 @@ public class TestDecryptFilterPlugin
         Map<String, String> keys = new HashMap<>();
         keys.put("key_hex", "098F6BCD4621D373CADE4E832627B4F60A9172716AE6428409885B8B829CCB05");
         keys.put("iv_hex", "C9DD4BB33B827EB1FBA1B16A0074D460");
-        doReturn(keys).when(plugin).retrieveKey(any(String.class), any(String.class), any(AmazonS3.class), any(RetryExecutor.class));
+        doReturn(keys).when(plugin).retrieveKey(any(String.class), any(String.class), any(AmazonS3.class));
         execute("s3_with_algorithm_required_iv");
         ArrayNode arrayNode = decrypt("gUzzC+nJSBLbPTAzJlbbMA==");
         assertEquals(arrayNode.size(), 1);
@@ -504,7 +501,7 @@ public class TestDecryptFilterPlugin
         plugin = spy(plugin);
         Map<String, String> keys = new HashMap<>();
         keys.put("key_hex", "098F6BCD4621D373CADE4E832627B4F60A9172716AE6428409885B8B829CCB05");
-        doReturn(keys).when(plugin).retrieveKey(any(String.class), any(String.class), any(AmazonS3.class), any(RetryExecutor.class));
+        doReturn(keys).when(plugin).retrieveKey(any(String.class), any(String.class), any(AmazonS3.class));
         execute("s3_with_algorithm_not_required_iv");
         ArrayNode arrayNode = decrypt("CO5cH3pGbD4TbUVp9KiOjA==");
         assertEquals(arrayNode.size(), 1);
@@ -521,7 +518,7 @@ public class TestDecryptFilterPlugin
         Map<String, String> keys = new HashMap<>();
         keys.put("key_hex", "098F6BCD4621D373CADE4E832627B4F60A9172716AE6428409885B8B829CCB05");
         keys.put("iv_hex", "C9DD4BB33B827EB1FBA1B16A0074D460");
-        doReturn(keys).when(plugin).retrieveKey(any(String.class), any(String.class), any(AmazonS3.class), any(RetryExecutor.class));
+        doReturn(keys).when(plugin).retrieveKey(any(String.class), any(String.class), any(AmazonS3.class));
         execute("s3_with_algorithm_not_required_iv");
         ArrayNode arrayNode = decrypt("CO5cH3pGbD4TbUVp9KiOjA==");
         assertEquals(arrayNode.size(), 1);
@@ -545,7 +542,8 @@ public class TestDecryptFilterPlugin
     public void testS3WithInvalidRegion()
     {
         thrown.expectCause(hasCause(isA(ConfigException.class)));
-        execute("s3_with_invalid_region");
+        ConfigSource configSource = config("s3_with_invalid_region");
+        plugin.newS3Client(configSource.loadConfig(DecryptFilterPlugin.PluginTask.class).getAWSParams().get());
     }
 
     @Test
@@ -599,93 +597,12 @@ public class TestDecryptFilterPlugin
     }
 
     @Test
-    public void testS3LackOfAWSParamsFullPath()
+    public void testS3LackOfAWSParamsPath()
     {
         thrown.expectCause(hasCause(isA(ConfigException.class)));
-        thrown.expectMessage("Field 'full_path' is required but not set");
+        thrown.expectMessage("Field 'path' is required but not set");
         ConfigSource configSource = config("s3_with_algorithm_required_iv");
-        configSource.getNested("aws_params").remove("full_path");
+        configSource.getNested("aws_params").remove("path");
         plugin.transaction(configSource, inputSchema, new Control());
-    }
-
-    private static RetryExecutor retryExecutor()
-    {
-        return RetryExecutor.retryExecutor()
-                .withInitialRetryWait(0)
-                .withMaxRetryWait(0);
-    }
-
-    @Test
-    public void testS3OnRetryGiveUpShouldThrowConfigExceptionForExceptionInForbiddenCode() throws IOException
-    {
-        thrown.expectCause(hasCause(isA(ConfigException.class)));
-        AmazonServiceException exception = new AmazonServiceException("Forbidden exception");
-        exception.setStatusCode(HttpStatus.SC_FORBIDDEN);
-        exception.setErrorType(AmazonServiceException.ErrorType.Client);
-        doThrow(exception).when(client).getObject(any(GetObjectRequest.class));
-        plugin.retrieveKey("a_bucket", "a_path", client, retryExecutor().withRetryLimit(1));
-    }
-
-    @Test
-    public void testS3OnRetryGiveUpShouldThrowConfigExceptionForExceptionInMethodNotAllowCode() throws IOException
-    {
-        thrown.expectCause(hasCause(isA(ConfigException.class)));
-        AmazonServiceException exception = new AmazonServiceException("method not allow exception");
-        exception.setStatusCode(HttpStatus.SC_METHOD_NOT_ALLOWED);
-        exception.setErrorType(AmazonServiceException.ErrorType.Client);
-        doThrow(exception).when(client).getObject(any(GetObjectRequest.class));
-        plugin.retrieveKey("a_bucket", "a_path", client, retryExecutor().withRetryLimit(1));
-    }
-
-    @Test
-    public void testS3OnRetryGiveUpShouldThrowConfigExceptionForExceptionExpiredTokenCode() throws IOException
-    {
-        thrown.expectCause(hasCause(isA(ConfigException.class)));
-        AmazonServiceException exception = new AmazonServiceException("expired token exception");
-        exception.setStatusCode(HttpStatus.SC_BAD_REQUEST);
-        exception.setErrorCode("ExpiredToken");
-        exception.setErrorType(AmazonServiceException.ErrorType.Client);
-        doThrow(exception).when(client).getObject(any(GetObjectRequest.class));
-        plugin.retrieveKey("a_bucket", "a_path", client, retryExecutor().withRetryLimit(1));
-    }
-
-    @Test
-    public void testS3OnRetryGiveUpShouldThrowConfigExceptionForExceptionNoSuchBucketCode() throws IOException
-    {
-        thrown.expectCause(hasCause(isA(ConfigException.class)));
-        AmazonServiceException exception = new AmazonServiceException("no such bucket exception");
-        exception.setErrorCode("NoSuchBucket");
-        exception.setErrorType(AmazonServiceException.ErrorType.Client);
-        doThrow(exception).when(client).getObject(any(GetObjectRequest.class));
-        plugin.retrieveKey("a_bucket", "a_path", client, retryExecutor().withRetryLimit(1));
-    }
-
-    @Test
-    public void testS3OnRetryGiveUpShouldThrowConfigExceptionForExceptionNoSuchKeyCode() throws IOException
-    {
-        thrown.expectCause(hasCause(isA(ConfigException.class)));
-        AmazonServiceException exception = new AmazonServiceException("no such key exception");
-        exception.setErrorCode("NoSuchKey");
-        exception.setErrorType(AmazonServiceException.ErrorType.Client);
-        doThrow(exception).when(client).getObject(any(GetObjectRequest.class));
-        plugin.retrieveKey("a_bucket", "a_path", client, retryExecutor().withRetryLimit(1));
-    }
-
-    @Test
-    public void testS3RetryableExceptionShouldThrowOriginalException() throws IOException
-    {
-        thrown.expectCause(hasCause(isA(AmazonServiceException.class)));
-        AmazonServiceException exception = new AmazonServiceException("retryable exception");
-        doThrow(exception).when(client).getObject(any(GetObjectRequest.class));
-        plugin.retrieveKey("a_bucket", "a_path", client, retryExecutor().withRetryLimit(1));
-    }
-
-    @Test
-    public void testS3SdkClientExceptionShouldThrowOriginalException() throws IOException
-    {
-        thrown.expectCause(hasCause(isA(SdkClientException.class)));
-        SdkClientException exception = new SdkClientException("sdk client exception");
-        doThrow(exception).when(client).getObject(any(GetObjectRequest.class));
-        plugin.retrieveKey("a_bucket", "a_path", client, retryExecutor().withRetryLimit(1));
     }
 }

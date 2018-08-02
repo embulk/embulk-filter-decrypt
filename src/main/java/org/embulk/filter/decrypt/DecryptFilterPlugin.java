@@ -31,7 +31,6 @@ import org.embulk.spi.PageBuilder;
 import org.embulk.spi.PageOutput;
 import org.embulk.spi.PageReader;
 import org.embulk.spi.Schema;
-import org.embulk.spi.util.RetryExecutor;
 import org.slf4j.Logger;
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.Yaml;
@@ -158,7 +157,7 @@ public class DecryptFilterPlugin
                 }
             }
             throw new ConfigException(
-                    format("Unsupported output encoding '%s'. Supported encodings are %s.",
+                    format("Unsupported input encoding '%s'. Supported encodings are %s.",
                             name,
                             join(encoders, ", ")));
         }
@@ -191,14 +190,14 @@ public class DecryptFilterPlugin
     }
 
     public interface PluginTask
-            extends RetrySupportPluginTask
+            extends Task
     {
         @Config("algorithm")
         public Algorithm getAlgorithm();
 
-        @Config("output_encoding")
+        @Config("input_encoding")
         @ConfigDefault("\"base64\"")
-        public Encoder getOutputEncoding();
+        public Encoder getInputEncoding();
 
         @Config("key_type")
         @ConfigDefault("\"inline\"")
@@ -238,25 +237,11 @@ public class DecryptFilterPlugin
         @Config("bucket")
         public String getBucket();
 
-        @Config("full_path")
-        public String getFullPath();
+        @Config("path")
+        public String getPath();
     }
 
-    public interface RetrySupportPluginTask extends Task
-    {
-        @Config("maximum_retries")
-        @ConfigDefault("7")
-        int getMaximumRetries();
-
-        @Config("initial_retry_interval_millis")
-        @ConfigDefault("30000")
-        int getInitialRetryIntervalMillis();
-
-        @Config("maximum_retry_interval_millis")
-        @ConfigDefault("480000")
-        int getMaximumRetryIntervalMillis();
-    }
-
+    private static final Yaml yaml = new Yaml(new SafeConstructor(), new Representer(), new DumperOptions(), new YamlTagResolver());
     private static final Logger log = Exec.getLogger(DecryptFilterPlugin.class);
 
     @Override
@@ -265,38 +250,18 @@ public class DecryptFilterPlugin
     {
         PluginTask task = config.loadConfig(PluginTask.class);
 
-        validate(task, inputSchema);
+        validateAndResolveKey(task, inputSchema);
 
         control.run(task.dump(), inputSchema);
     }
 
-    /**
-     * Build the common retry executor from some configuration params of plugin task.
-     * @param task Plugin task.
-     * @return RetryExecutor object
-     */
-    private static RetryExecutor retryExecutorFrom(RetrySupportPluginTask task)
-    {
-        return RetryExecutor.retryExecutor()
-                .withRetryLimit(task.getMaximumRetries())
-                .withInitialRetryWait(task.getInitialRetryIntervalMillis())
-                .withMaxRetryWait(task.getMaximumRetryIntervalMillis());
-    }
-
     @VisibleForTesting
-    public Map<String, String> retrieveKey(final String bucket, final String path, final AmazonS3 client, RetryExecutor retryExec) throws IOException
+    public Map<String, String> retrieveKey(final String bucket, final String path, final AmazonS3 client)
     {
         S3Object fullObject = null;
+
         try {
-            fullObject = new DefaultRetryable<S3Object>("Looking up for a single object")
-            {
-                @Override
-                public S3Object call()
-                {
-                    return client.getObject(new GetObjectRequest(bucket, path));
-                }
-            }.executeWith(retryExec);
-            Yaml yaml = new Yaml(new SafeConstructor(), new Representer(), new DumperOptions(), new YamlTagResolver());
+            fullObject = client.getObject(new GetObjectRequest(bucket, path));
             return (Map<String, String>) yaml.load(fullObject.getObjectContent());
         }
         catch (AmazonServiceException e) {
@@ -312,15 +277,15 @@ public class DecryptFilterPlugin
             }
             throw e;
         }
-        catch (SdkClientException e) {
-            // Amazon S3 couldn't be contacted for a response, or the client
-            // couldn't parse the response from Amazon S3.
-           throw e;
-        }
         finally {
             // To ensure that the network connection doesn't remain open, close any open input streams.
             if (fullObject != null) {
-                fullObject.close();
+                try {
+                    fullObject.close();
+                }
+                catch (IOException e) {
+                    log.warn("Failure to close S3 Object input stream", e);
+                }
             }
         }
     }
@@ -342,10 +307,15 @@ public class DecryptFilterPlugin
             }
         };
 
-        return AmazonS3ClientBuilder.standard()
-                .withRegion(awsParams.getRegion())
-                .withCredentials(awsCredentialsProvider)
-                .build();
+        try {
+            return AmazonS3ClientBuilder.standard()
+                    .withRegion(awsParams.getRegion())
+                    .withCredentials(awsCredentialsProvider)
+                    .build();
+        }
+        catch (SdkClientException e) {
+            throw new ConfigException(e);
+        }
     }
 
     @Override
@@ -371,7 +341,7 @@ public class DecryptFilterPlugin
         return new PageOutput() {
             private final PageReader pageReader = new PageReader(inputSchema);
             private final PageBuilder pageBuilder = new PageBuilder(Exec.getBufferAllocator(), outputSchema, output);
-            private final Encoder encoder = task.getOutputEncoding();
+            private final Encoder encoder = task.getInputEncoding();
 
             @Override
             public void finish()
@@ -492,7 +462,7 @@ public class DecryptFilterPlugin
         };
     }
 
-    private void validate(PluginTask task, Schema schema) throws ConfigException
+    private void validateAndResolveKey(PluginTask task, Schema schema) throws ConfigException
     {
         switch (task.getKeyType()) {
             case INLINE:
@@ -507,38 +477,29 @@ public class DecryptFilterPlugin
                 }
                 break;
             case S3:
-                try {
-                    if (!task.getAWSParams().isPresent()) {
-                        throw new ConfigException("AWS Params are required for S3 Key type");
-                    }
-                    AWSParams params = task.getAWSParams().get();
-                    RetryExecutor retryExec = retryExecutorFrom(task);
-                    AmazonS3 s3Client = newS3Client(params);
-                    Map<String, String> keys = retrieveKey(params.getBucket(), params.getFullPath(), s3Client, retryExec);
-                    if (keys == null) {
-                        throw new ConfigException("Key file is in incorrect format or not enable to be retrieved");
-                    }
-                    String key = keys.get("key_hex");
-                    if (isNullOrEmpty(key)) {
-                        throw new ConfigException("Field 'key_hex' is required but not set");
-                    }
-                    String iv = keys.get("iv_hex");
-                    if (task.getAlgorithm().useIv() && isNullOrEmpty(iv)) {
-                        throw new ConfigException("Algorithm '" + task.getAlgorithm() + "' requires initialization vector. Please generate one and set it to iv_hex option.");
-                    }
-                    else if (!task.getAlgorithm().useIv() && !isNullOrEmpty(iv)) {
-                        log.warn("Algorithm '" + task.getAlgorithm() + "' doesn't use initialization vector. iv_hex is ignored");
-                    }
-                    task.setKeyHex(Optional.of(key));
-                    if (!isNullOrEmpty(iv)) {
-                        task.setIvHex(Optional.of(iv));
-                    }
+                if (!task.getAWSParams().isPresent()) {
+                    throw new ConfigException("AWS Params are required for S3 Key type");
                 }
-                catch (IOException e) {
-                    throw new ConfigException(e);
+                AWSParams params = task.getAWSParams().get();
+                AmazonS3 s3Client = newS3Client(params);
+                Map<String, String> keys = retrieveKey(params.getBucket(), params.getPath(), s3Client);
+                if (keys == null) {
+                    throw new ConfigException("Key file is in incorrect format or not enable to be retrieved");
                 }
-                catch (Exception e) {
-                    throw new ConfigException(e);
+                String key = keys.get("key_hex");
+                if (isNullOrEmpty(key)) {
+                    throw new ConfigException("Field 'key_hex' is required but not set");
+                }
+                String iv = keys.get("iv_hex");
+                if (task.getAlgorithm().useIv() && isNullOrEmpty(iv)) {
+                    throw new ConfigException("Algorithm '" + task.getAlgorithm() + "' requires initialization vector. Please generate one and set it to iv_hex option.");
+                }
+                else if (!task.getAlgorithm().useIv() && !isNullOrEmpty(iv)) {
+                    log.warn("Algorithm '" + task.getAlgorithm() + "' doesn't use initialization vector. iv_hex is ignored");
+                }
+                task.setKeyHex(Optional.of(key));
+                if (!isNullOrEmpty(iv)) {
+                    task.setIvHex(Optional.of(iv));
                 }
                 break;
             default:
