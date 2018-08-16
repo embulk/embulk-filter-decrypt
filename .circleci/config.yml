@@ -1,0 +1,30 @@
+version: 2
+jobs:
+  build:
+    working_directory: ~/embulk-filter-decrypt
+    docker:
+      - image: openjdk:8-jdk
+    environment:
+      TERM: "dumb"
+      JVM_OPTS: -Xmx2048m
+    resource_class: xlarge
+    steps:
+      - checkout
+      - restore_cache:
+          key: jars-{{ checksum "build.gradle" }}
+      - run:
+          name: Download Dependencies
+          command: ./gradlew downloadDependencies
+      - save_cache:
+          paths:
+            - ~/.gradle
+          key: jars-{{ checksum "build.gradle" }}
+      - run:
+          name: Run Tests
+          command: EMBULK_FILTER_DECRYPT_TEST_CONFIG=`pwd`/ci/ci_decrypt.yml ./gradlew clean check checkstyle jacocoTestReport
+      - store_artifacts:
+          path: build/reports
+          destination: reports
+      - store_test_results:
+          path: build/test-results
+          destination: test-results

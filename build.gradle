@@ -3,6 +3,7 @@ plugins {
     id "com.github.jruby-gradle.base" version "0.1.5"
     id "java"
     id "checkstyle"
+    id "jacoco"
 }
 import com.github.jrubygradle.JRubyExec
 repositories {
@@ -21,8 +22,18 @@ targetCompatibility = 1.7
 dependencies {
     compile  "org.embulk:embulk-core:0.8.39"
     provided "org.embulk:embulk-core:0.8.39"
-    // compile "YOUR_JAR_DEPENDENCY_GROUP:YOUR_JAR_DEPENDENCY_MODULE:YOUR_JAR_DEPENDENCY_VERSION"
+    compile "com.amazonaws:aws-java-sdk-s3:1.11.253"
+
     testCompile "junit:junit:4.+"
+    testCompile "org.embulk:embulk-core:0.8.39:tests"
+    testCompile "org.embulk:embulk-test:0.8.39"
+    testCompile "org.embulk:embulk-standards:0.8.39"
+    testCompile "org.mockito:mockito-core:2.+"
+}
+
+task downloadDependencies(type: Exec) {
+    configurations.testRuntime.files
+    commandLine 'echo', 'Downloaded all dependencies'
 }
 
 task classpath(type: Copy, dependsOn: ["jar"]) {
@@ -67,6 +78,15 @@ task "package"(dependsOn: ["gemspec", "classpath"]) {
     }
 }
 
+jacocoTestReport {
+    group = "Reporting"
+    reports {
+        xml.setEnabled(false)
+        csv.setEnabled(false)
+        html.destination file("${buildDir}/reports/coverage")
+    }
+}
+
 task gemspec {
     ext.gemspecFile = file("${project.name}.gemspec")
     inputs.file "build.gradle"
@@ -78,9 +98,9 @@ Gem::Specification.new do |spec|
   spec.authors       = ["Vinh Vo"]
   spec.summary       = %[Decrypt filter plugin for Embulk]
   spec.description   = %[Decrypt]
-  spec.email         = ["vinhvd@gmail.com"]
+  spec.email         = ["vinhvd@treasure-data.com"]
   spec.licenses      = ["MIT"]
-  # TODO set this: spec.homepage      = "https://github.com/vinhvd/embulk-filter-decrypt"
+  # TODO set this: spec.homepage      = "https://github.com/treasure-data/embulk-filter-decrypt"
 
   spec.files         = `git ls-files`.split("\n") + Dir["classpath/*.jar"]
   spec.test_files    = spec.files.grep(%r"^(test|spec)/")
