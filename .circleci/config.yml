@@ -6,8 +6,7 @@ jobs:
       - image: openjdk:8-jdk
     environment:
       TERM: "dumb"
-      JVM_OPTS: -Xmx2048m
-    resource_class: xlarge
+      _JAVA_OPTIONS: "-Xmx2048m"
     steps:
       - checkout
       - restore_cache:
