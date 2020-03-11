@@ -1,47 +1,81 @@
 plugins {
-    id "com.jfrog.bintray" version "1.1"
-    id "com.github.jruby-gradle.base" version "0.1.5"
     id "java"
+    id "maven-publish"
     id "checkstyle"
     id "jacoco"
+    id "org.embulk.embulk-plugins" version "0.3.1"
 }
-import com.github.jrubygradle.JRubyExec
+
 repositories {
     mavenCentral()
     jcenter()
 }
-configurations {
-    provided
+
+group = "org.embulk.filter.decrypt"
+version = "0.1.1"
+description = "Decrypt"
+
+sourceCompatibility = 1.8
+targetCompatibility = 1.8
+
+tasks.withType(JavaCompile) {
+    options.compilerArgs << "-Xlint:deprecation" << "-Xlint:unchecked"
 }
 
-version = "0.1.0"
-
-sourceCompatibility = 1.7
-targetCompatibility = 1.7
-
 dependencies {
-    compile  "org.embulk:embulk-core:0.8.39"
-    provided "org.embulk:embulk-core:0.8.39"
-    compile "com.amazonaws:aws-java-sdk-s3:1.11.253"
+    compileOnly "org.embulk:embulk-core:0.9.23"
+    compile("com.amazonaws:aws-java-sdk-s3:1.11.253") {
+        exclude group: "com.fasterxml.jackson.core", module: "jackson-databind"
+        exclude group: "com.fasterxml.jackson.core", module: "jackson-annotations"
+        exclude group: "com.fasterxml.jackson.core", module: "jackson-core"
+        exclude group: "joda-time", module: "joda-time"
+    }
+    compile "org.yaml:snakeyaml:1.18"
+    compile "org.embulk:embulk-util-snakeyaml:0.1.0"
 
-    testCompile "junit:junit:4.+"
-    testCompile "org.embulk:embulk-core:0.8.39:tests"
-    testCompile "org.embulk:embulk-test:0.8.39"
-    testCompile "org.embulk:embulk-standards:0.8.39"
-    testCompile "org.mockito:mockito-core:2.+"
+    testCompile "junit:junit:4.13"
+    testCompile "org.embulk:embulk-core:0.9.23"
+    testCompile "org.embulk:embulk-core:0.9.23:tests"
+    testCompile "org.embulk:embulk-test:0.9.23"
+    testCompile "org.embulk:embulk-standards:0.9.23"
+    testCompile "org.embulk:embulk-deps-buffer:0.9.23"
+    testCompile "org.embulk:embulk-deps-config:0.9.23"
+    testCompile "org.mockito:mockito-core:2.28.2"
+}
+
+embulkPlugin {
+    mainClass = "org.embulk.filter.decrypt.DecryptFilterPlugin"
+    category = "filter"
+    type = "decrypt"
+}
+
+publishing {
+    publications {
+        embulkPluginMaven(MavenPublication) {  // Publish it with "publishEmbulkPluginMavenPublicationToMavenRepository".
+            from components.java  // Must be "components.java". The dependency modification works only for it.
+        }
+    }
+    repositories {
+        // TODO: Configure some public Maven repo(s).
+    }
+}
+
+gem {
+    authors = [ "Vinh Vo" ]
+    email = [ "vinhvd@treasure-data.com" ]
+    summary = "Decrypt filter plugin for Embulk"
+    homepage = "https://github.com/treasure-data/embulk-filter-decrypt"
+    licenses = [ "MIT" ]
+}
+
+gemPush {
+    host = "https://rubygems.org"
 }
 
 task downloadDependencies(type: Exec) {
     configurations.testRuntime.files
     commandLine 'echo', 'Downloaded all dependencies'
 }
-
-task classpath(type: Copy, dependsOn: ["jar"]) {
-    doFirst { file("classpath").deleteDir() }
-    from (configurations.runtime - configurations.provided + files(jar.archivePath))
-    into "classpath"
-}
-clean { delete "classpath" }
 
 checkstyle {
     configFile = file("${project.rootDir}/config/checkstyle/checkstyle.xml")
@@ -60,24 +94,6 @@ task checkstyle(type: Checkstyle) {
     source = sourceSets.main.allJava + sourceSets.test.allJava
 }
 
-task gem(type: JRubyExec, dependsOn: ["gemspec", "classpath"]) {
-    jrubyArgs "-rrubygems/gem_runner", "-eGem::GemRunner.new.run(ARGV)", "build"
-    script "${project.name}.gemspec"
-    doLast { ant.move(file: "${project.name}-${project.version}.gem", todir: "pkg") }
-}
-
-task gemPush(type: JRubyExec, dependsOn: ["gem"]) {
-    jrubyArgs "-rrubygems/gem_runner", "-eGem::GemRunner.new.run(ARGV)", "push"
-    script "pkg/${project.name}-${project.version}.gem"
-}
-
-task "package"(dependsOn: ["gemspec", "classpath"]) {
-    doLast {
-        println "> Build succeeded."
-        println "> You can run embulk with '-L ${file(".").absolutePath}' argument."
-    }
-}
-
 jacocoTestReport {
     group = "Reporting"
     reports {
@@ -86,31 +102,3 @@ jacocoTestReport {
         html.destination file("${buildDir}/reports/coverage")
     }
 }
-
-task gemspec {
-    ext.gemspecFile = file("${project.name}.gemspec")
-    inputs.file "build.gradle"
-    outputs.file gemspecFile
-    doLast { gemspecFile.write($/
-Gem::Specification.new do |spec|
-  spec.name          = "${project.name}"
-  spec.version       = "${project.version}"
-  spec.authors       = ["Vinh Vo"]
-  spec.summary       = %[Decrypt filter plugin for Embulk]
-  spec.description   = %[Decrypt]
-  spec.email         = ["vinhvd@treasure-data.com"]
-  spec.licenses      = ["MIT"]
-  # TODO set this: spec.homepage      = "https://github.com/treasure-data/embulk-filter-decrypt"
-
-  spec.files         = `git ls-files`.split("\n") + Dir["classpath/*.jar"]
-  spec.test_files    = spec.files.grep(%r"^(test|spec)/")
-  spec.require_paths = ["lib"]
-
-  #spec.add_dependency 'YOUR_GEM_DEPENDENCY', ['~> YOUR_GEM_DEPENDENCY_VERSION']
-  spec.add_development_dependency 'bundler', ['~> 1.0']
-  spec.add_development_dependency 'rake', ['>= 10.0']
-end
-/$)
-    }
-}
-clean { delete "${project.name}.gemspec" }
