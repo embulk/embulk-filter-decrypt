@@ -5,7 +5,7 @@ import com.amazonaws.services.s3.model.Region;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.datatype.guava.GuavaModule;
-import com.fasterxml.jackson.datatype.joda.JodaModule;
+import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
 import org.embulk.EmbulkTestRuntime;
 import org.embulk.config.ConfigException;
 import org.embulk.config.ConfigLoader;
@@ -111,7 +111,7 @@ public class TestDecryptFilterPlugin
         try {
             ObjectMapper mapper = new ObjectMapper()
                     .registerModule(new GuavaModule())
-                    .registerModule(new JodaModule());
+                    .registerModule(new Jdk8Module());
             ConfigLoader configLoader = new ConfigLoader(new ModelManager(null, mapper));
             return configLoader.fromYamlFile(new File(testConfigPath)).getNested(name);
         }
@@ -206,7 +206,8 @@ public class TestDecryptFilterPlugin
     @Test
     public void testDefaultInputEncodingShouldBeBase64()
     {
-        DecryptFilterPlugin.PluginTask task = config("default_input_encoding").loadConfig(DecryptFilterPlugin.PluginTask.class);
+        final DecryptFilterPlugin.PluginTask task =
+                DecryptFilterPlugin.CONFIG_MAPPER.map(config("default_input_encoding"), DecryptFilterPlugin.PluginTask.class);
         assertEquals(task.getInputEncoding(), DecryptFilterPlugin.Encoder.BASE64);
     }
 
@@ -532,7 +533,8 @@ public class TestDecryptFilterPlugin
     public void testS3ConfiguredRegion()
     {
         ConfigSource configSource = config("s3_with_algorithm_required_iv");
-        AmazonS3 s3Client = plugin.newS3Client(configSource.loadConfig(DecryptFilterPlugin.PluginTask.class).getAWSParams().get());
+        final AmazonS3 s3Client = plugin.newS3Client(
+                DecryptFilterPlugin.CONFIG_MAPPER.map(configSource, DecryptFilterPlugin.PluginTask.class).getAWSParams().get());
 
         // Should reflect the region configuration as is
         assertEquals(s3Client.getRegion(), Region.US_East_2);
@@ -543,7 +545,8 @@ public class TestDecryptFilterPlugin
     {
         thrown.expectCause(hasCause(isA(ConfigException.class)));
         ConfigSource configSource = config("s3_with_invalid_region");
-        plugin.newS3Client(configSource.loadConfig(DecryptFilterPlugin.PluginTask.class).getAWSParams().get());
+        plugin.newS3Client(
+                DecryptFilterPlugin.CONFIG_MAPPER.map(configSource, DecryptFilterPlugin.PluginTask.class).getAWSParams().get());
     }
 
     @Test
