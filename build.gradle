@@ -100,6 +100,18 @@ javadoc {
     }
 }
 
+jar {
+    from rootProject.file("LICENSE")
+}
+
+sourcesJar {
+    from rootProject.file("LICENSE")
+}
+
+javadocJar {
+    from rootProject.file("LICENSE")
+}
+
 publishing {
     publications {
         maven(MavenPublication) {
@@ -120,8 +132,8 @@ publishing {
                 licenses {
                     license {
                         // http://central.sonatype.org/pages/requirements.html#license-information
-                        name = "MIT License"
-                        url = "http://www.opensource.org/licenses/mit-license.php"
+                        name = "The Apache License, Version 2.0"
+                        url = "https://www.apache.org/licenses/LICENSE-2.0.txt"
                     }
                 }
 
@@ -162,8 +174,12 @@ gem {
     authors = [ "Vinh Vo" ]
     email = [ "vinhvd@treasure-data.com" ]
     summary = "Decrypt filter plugin for Embulk"
-    homepage = "https://github.com/treasure-data/embulk-filter-decrypt"
-    licenses = [ "MIT" ]
+    homepage = "https://github.com/embulk/embulk-filter-decrypt"
+    licenses = [ "Apache-2.0" ]
+
+    from rootProject.file("LICENSE")
+    from rootProject.file("NOTICE_GEM")
+    rename ("NOTICE_GEM", "NOTICE")
 }
 
 gemPush {
