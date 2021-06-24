@@ -11,15 +11,11 @@ import com.amazonaws.services.s3.model.GetObjectRequest;
 import com.amazonaws.services.s3.model.S3Object;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Optional;
 import com.google.common.io.BaseEncoding;
-import org.embulk.config.Config;
-import org.embulk.config.ConfigDefault;
 import org.embulk.config.ConfigException;
 import org.embulk.config.ConfigSource;
-import org.embulk.config.Task;
 import org.embulk.config.TaskSource;
+import org.embulk.spi.BufferAllocator;
 import org.embulk.spi.Column;
 import org.embulk.spi.ColumnVisitor;
 import org.embulk.spi.DataException;
@@ -30,6 +26,12 @@ import org.embulk.spi.PageBuilder;
 import org.embulk.spi.PageOutput;
 import org.embulk.spi.PageReader;
 import org.embulk.spi.Schema;
+import org.embulk.util.config.Config;
+import org.embulk.util.config.ConfigDefault;
+import org.embulk.util.config.ConfigMapper;
+import org.embulk.util.config.ConfigMapperFactory;
+import org.embulk.util.config.Task;
+import org.embulk.util.config.TaskMapper;
 import org.embulk.util.snakeyaml.EmbulkYamlTagResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,14 +51,16 @@ import java.io.IOException;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.stream.Collectors;
 
 import static com.google.common.base.Charsets.UTF_8;
 import static com.google.common.base.Strings.isNullOrEmpty;
 import static java.lang.String.format;
-import static org.apache.commons.lang3.StringUtils.join;
 
 public class DecryptFilterPlugin
         implements FilterPlugin
@@ -118,7 +122,7 @@ public class DecryptFilterPlugin
             }
             throw new ConfigException(format("Unsupported algorithm '%s'. Supported algorithms are %s",
                     name,
-                    join(algos, ", ")));
+                    algos.stream().map(Algorithm::toString).collect(Collectors.joining(", "))));
         }
 
         @JsonValue
@@ -160,7 +164,7 @@ public class DecryptFilterPlugin
             throw new ConfigException(
                     format("Unsupported input encoding '%s'. Supported encodings are %s.",
                             name,
-                            join(encoders, ", ")));
+                            encoders.stream().map(Encoder::toString).collect(Collectors.joining(", "))));
         }
 
         @JsonValue
@@ -242,6 +246,10 @@ public class DecryptFilterPlugin
         public String getPath();
     }
 
+    private static final ConfigMapperFactory CONFIG_MAPPER_FACTORY = ConfigMapperFactory.builder().addDefaultModules().build();
+    static final ConfigMapper CONFIG_MAPPER = CONFIG_MAPPER_FACTORY.createConfigMapper();
+    private static final TaskMapper TASK_MAPPER = CONFIG_MAPPER_FACTORY.createTaskMapper();
+
     private static final Yaml yaml = new Yaml(new SafeConstructor(), new Representer(), new DumperOptions(), new EmbulkYamlTagResolver());
     private static final Logger log = LoggerFactory.getLogger(DecryptFilterPlugin.class);
 
@@ -249,14 +257,13 @@ public class DecryptFilterPlugin
     public void transaction(ConfigSource config, Schema inputSchema,
                             FilterPlugin.Control control)
     {
-        PluginTask task = config.loadConfig(PluginTask.class);
+        final PluginTask task = CONFIG_MAPPER.map(config, PluginTask.class);
 
         validateAndResolveKey(task, inputSchema);
 
-        control.run(task.dump(), inputSchema);
+        control.run(task.toTaskSource(), inputSchema);
     }
 
-    @VisibleForTesting
     public Map<String, String> retrieveKey(final String bucket, final String path, final AmazonS3 client)
     {
         S3Object fullObject = null;
@@ -297,7 +304,6 @@ public class DecryptFilterPlugin
         }
     }
 
-    @VisibleForTesting
     public AmazonS3 newS3Client(final AWSParams awsParams)
     {
         AWSCredentialsProvider awsCredentialsProvider = new AWSCredentialsProvider()
@@ -329,7 +335,7 @@ public class DecryptFilterPlugin
     public PageOutput open(TaskSource taskSource, final Schema inputSchema,
                            final Schema outputSchema, final PageOutput output)
     {
-        final PluginTask task = taskSource.loadTask(PluginTask.class);
+        final PluginTask task = TASK_MAPPER.map(taskSource, PluginTask.class);
 
         final Cipher cipher;
         try {
@@ -346,8 +352,8 @@ public class DecryptFilterPlugin
         }
 
         return new PageOutput() {
-            private final PageReader pageReader = new PageReader(inputSchema);
-            private final PageBuilder pageBuilder = new PageBuilder(Exec.getBufferAllocator(), outputSchema, output);
+            private final PageReader pageReader = getPageReader(inputSchema);
+            private final PageBuilder pageBuilder = getPageBuilder(Exec.getBufferAllocator(), outputSchema, output);
             private final Encoder encoder = task.getInputEncoding();
 
             @Override
@@ -448,7 +454,7 @@ public class DecryptFilterPlugin
                                 pageBuilder.setNull(column);
                             }
                             else {
-                                pageBuilder.setTimestamp(column, pageReader.getTimestamp(column));
+                                setTimestampToPageBuilder(pageBuilder, column, getTimestampFromPageReader(pageReader, column));
                             }
                         }
 
@@ -546,4 +552,130 @@ public class DecryptFilterPlugin
             return cipher;
         }
     }
+
+    @SuppressWarnings("deprecation")
+    private static PageBuilder getPageBuilder(final BufferAllocator bufferAllocator, final Schema schema, final PageOutput output)
+    {
+        if (HAS_EXEC_GET_PAGE_BUILDER) {
+            return Exec.getPageBuilder(bufferAllocator, schema, output);
+        }
+        else {
+            return new PageBuilder(bufferAllocator, schema, output);
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    private static PageReader getPageReader(final Schema schema)
+    {
+        if (HAS_EXEC_GET_PAGE_READER) {
+            return Exec.getPageReader(schema);
+        }
+        else {
+            return new PageReader(schema);
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    public Instant getTimestampFromPageReader(final PageReader pageReader, final Column column)
+    {
+        if (HAS_GET_TIMESTAMP_INSTANT_COLUMN) {
+            return pageReader.getTimestampInstant(column);
+        }
+        else if (HAS_GET_TIMESTAMP_COLUMN) {
+            return pageReader.getTimestamp(column).getInstant();
+        }
+        else {
+            throw new IllegalStateException(
+                    "Neither PageReader#getTimestamp(Column) nor PageReader#getTimestampInstant(Column) found.");
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    private static void setTimestampToPageBuilder(final PageBuilder pageBuilder, final Column column, final Instant instant)
+    {
+        if (HAS_SET_TIMESTAMP_INSTANT) {
+            pageBuilder.setTimestamp(column, instant);
+        }
+        else if (HAS_SET_TIMESTAMP_TIMESTAMP) {
+            pageBuilder.setTimestamp(column, org.embulk.spi.time.Timestamp.ofInstant(instant));
+        }
+        else {
+            throw new IllegalStateException(
+                    "Neither PageBuilder#setTimestamp(Column, Instant) nor PageBuilder#setTimestamp(Column, Timestamp) found.");
+        }
+    }
+
+    private static boolean hasExecGetPageBuilder()
+    {
+        try {
+            Exec.class.getMethod("getPageBuilder", BufferAllocator.class, Schema.class, PageOutput.class);
+        }
+        catch (final NoSuchMethodException ex) {
+            return false;
+        }
+        return true;
+    }
+
+    private static boolean hasExecGetPageReader()
+    {
+        try {
+            Exec.class.getMethod("getPageReader", Schema.class);
+        }
+        catch (final NoSuchMethodException ex) {
+            return false;
+        }
+        return true;
+    }
+
+    private static boolean hasGetTimestampColumn()
+    {
+        try {
+            PageReader.class.getMethod("getTimestamp", Column.class);
+        }
+        catch (final NoSuchMethodException ex) {
+            return false;
+        }
+        return true;
+    }
+
+    private static boolean hasGetTimestampInstantColumn()
+    {
+        try {
+            PageReader.class.getMethod("getTimestampInstant", Column.class);
+        }
+        catch (final NoSuchMethodException ex) {
+            return false;
+        }
+        return true;
+    }
+
+    @SuppressWarnings("deprecation")
+    private static boolean hasSetTimestampTimestamp()
+    {
+        try {
+            PageBuilder.class.getMethod("setTimestamp", Column.class, org.embulk.spi.time.Timestamp.class);
+        }
+        catch (final NoSuchMethodException ex) {
+            return false;
+        }
+        return true;
+    }
+
+    private static boolean hasSetTimestampInstant()
+    {
+        try {
+            PageBuilder.class.getMethod("setTimestamp", Column.class, Instant.class);
+        }
+        catch (final NoSuchMethodException ex) {
+            return false;
+        }
+        return true;
+    }
+
+    private static final boolean HAS_EXEC_GET_PAGE_BUILDER = hasExecGetPageBuilder();
+    private static final boolean HAS_EXEC_GET_PAGE_READER = hasExecGetPageReader();
+    private static final boolean HAS_GET_TIMESTAMP_COLUMN = hasGetTimestampColumn();
+    private static final boolean HAS_GET_TIMESTAMP_INSTANT_COLUMN = hasGetTimestampInstantColumn();
+    private static final boolean HAS_SET_TIMESTAMP_INSTANT = hasSetTimestampInstant();
+    private static final boolean HAS_SET_TIMESTAMP_TIMESTAMP = hasSetTimestampTimestamp();
 }
