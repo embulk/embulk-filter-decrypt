@@ -138,6 +138,14 @@ publishing {
                 }
 
                 developers {
+                    developer {
+                        name = "Vinh Vo"
+                        email = "vinhvd@gmail.com"
+                    }
+                    developer {
+                        name = "Dai MIKURUBE"
+                        email = "dmikurube@treasure-data.com"
+                    }
                 }
 
                 scm {
