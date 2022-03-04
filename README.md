@@ -35,7 +35,7 @@ id,password,comment
 - **key_type**: encryption key (enum, optional, default: inline), can be either "inline" or "s3"
 - **key_hex**: encryption key (string, required if key_type is inline)
 - **iv_hex**: encryption initialization vector (string, required if mode of the algorithm is CBC and key_type is inline)
-- ** iv_block_size**: size of prepended initialization vector (optional, to be used if needed)
+- **iv_block_size**: size of prepended initialization vector (optional, to be used if needed)
 - **input_encoding**: the encoding of encrypted value, can be either "base64" or "hex" (base16)
 - **aws_params**: AWS/S3 parameters (hash, required if key_type is s3)
     - **region**: a valid AWS region
