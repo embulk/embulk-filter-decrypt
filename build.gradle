@@ -78,6 +78,7 @@ dependencies {
 
     compile "org.yaml:snakeyaml:1.18"
     compile "org.embulk:embulk-util-snakeyaml:0.1.0"
+    compile 'org.apache.commons:commons-lang3:3.4'
 
     testCompile "junit:junit:4.13"
     testCompile "org.embulk:embulk-core:0.10.31"
