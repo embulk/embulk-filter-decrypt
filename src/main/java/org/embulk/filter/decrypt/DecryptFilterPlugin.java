@@ -28,6 +28,7 @@ import com.amazonaws.services.s3.model.S3Object;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import com.google.common.io.BaseEncoding;
+import org.apache.commons.lang3.ArrayUtils;
 import org.embulk.config.ConfigException;
 import org.embulk.config.ConfigSource;
 import org.embulk.config.TaskSource;
@@ -68,10 +69,7 @@ import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
-import java.util.EnumSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.stream.Collectors;
 
 import static com.google.common.base.Charsets.UTF_8;
@@ -242,6 +240,10 @@ public class DecryptFilterPlugin
 
         @Config("column_names")
         public List<String> getColumnNames();
+
+        @Config("iv_block_size")
+        @ConfigDefault("0")
+        public int getBlockSize();
     }
 
     public interface AWSParams extends Task
@@ -447,6 +449,12 @@ public class DecryptFilterPlugin
 
                                 try {
                                     decrypted = cipher.doFinal(decoded);
+
+                                    if(task.getBlockSize() > 0) {
+                                        // Remove the prepended IV byte data
+                                        decrypted = ArrayUtils.subarray(decrypted, task.getBlockSize(), decrypted.length);
+                                    }
+                                    pageBuilder.setString(column, new String(decrypted, UTF_8));
                                 }
                                 catch (BadPaddingException ex) {
                                     // this must not happen because PKCS5Padding is always enabled
@@ -456,7 +464,6 @@ public class DecryptFilterPlugin
                                     // this must not happen because always doFinal is called
                                     throw new DataException(ex);
                                 }
-                                pageBuilder.setString(column, new String(decrypted, UTF_8));
                             }
                             else {
                                 pageBuilder.setString(column, pageReader.getString(column));
